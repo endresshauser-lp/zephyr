@@ -67,6 +67,7 @@ struct http_resource_desc {
 struct http_service_desc {
 	const char *host;
 	uint16_t *port;
+	int *fd;
 	void *detail;
 	size_t concurrent;
 	size_t backlog;
@@ -80,9 +81,11 @@ struct http_service_desc {
 
 #define __z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail, _res_begin,   \
 				_res_end, ...)                                                     \
-	static const STRUCT_SECTION_ITERABLE(http_service_desc, _name) = {                         \
+	static int _name##_fd = -1;                                                                \
+	const STRUCT_SECTION_ITERABLE(http_service_desc, _name) = {                                \
 		.host = _host,                                                                     \
 		.port = (uint16_t *)(_port),                                                       \
+		.fd = &_name##_fd,                                                                 \
 		.detail = (void *)(_detail),                                                       \
 		.concurrent = (_concurrent),                                                       \
 		.backlog = (_backlog),                                                             \
@@ -90,11 +93,9 @@ struct http_service_desc {
 		.res_end = (_res_end),                                                             \
 		COND_CODE_1(CONFIG_NET_SOCKETS_SOCKOPT_TLS,                                        \
 			    (.sec_tag_list = COND_CODE_0(NUM_VA_ARGS_LESS_1(__VA_ARGS__), (NULL),  \
-							 (GET_ARG_N(1, __VA_ARGS__))),), ())       \
-		COND_CODE_1(CONFIG_NET_SOCKETS_SOCKOPT_TLS,                                        \
+							 (GET_ARG_N(1, __VA_ARGS__))),), ()) COND_CODE_1(CONFIG_NET_SOCKETS_SOCKOPT_TLS,                                        \
 			    (.sec_tag_list_size = COND_CODE_0(NUM_VA_ARGS_LESS_1(__VA_ARGS__), (0),\
-					     (GET_ARG_N(1, GET_ARGS_LESS_N(1, __VA_ARGS__))))), ())\
-	}
+					     (GET_ARG_N(1, GET_ARGS_LESS_N(1, __VA_ARGS__))))), ()) }
 
 /** @endcond */
 
@@ -141,11 +142,11 @@ struct http_service_desc {
  * @param _sec_tag_list TLS security tag list used to setup a HTTPS socket.
  * @param _sec_tag_list_size TLS security tag list size used to setup a HTTPS socket.
  */
-#define HTTPS_SERVICE_DEFINE_EMPTY(_name, _host, _port, _concurrent, _backlog, _detail,          \
-				   _sec_tag_list, _sec_tag_list_size)                            \
-	__z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail, NULL, NULL, \
-				_sec_tag_list, _sec_tag_list_size);				 \
-	BUILD_ASSERT(IS_ENABLED(CONFIG_NET_SOCKETS_SOCKOPT_TLS),				 \
+#define HTTPS_SERVICE_DEFINE_EMPTY(_name, _host, _port, _concurrent, _backlog, _detail,            \
+				   _sec_tag_list, _sec_tag_list_size)                              \
+	__z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail, NULL, NULL,   \
+				_sec_tag_list, _sec_tag_list_size);                                \
+	BUILD_ASSERT(IS_ENABLED(CONFIG_NET_SOCKETS_SOCKOPT_TLS),                                   \
 		     "TLS is required for HTTP secure (CONFIG_NET_SOCKETS_SOCKOPT_TLS)")
 
 /**
@@ -195,15 +196,15 @@ struct http_service_desc {
  * @param _sec_tag_list TLS security tag list used to setup a HTTPS socket.
  * @param _sec_tag_list_size TLS security tag list size used to setup a HTTPS socket.
  */
-#define HTTPS_SERVICE_DEFINE(_name, _host, _port, _concurrent, _backlog, _detail,              \
-			     _sec_tag_list, _sec_tag_list_size)                                \
-	extern struct http_resource_desc _CONCAT(_http_resource_desc_##_name, _list_start)[];  \
-	extern struct http_resource_desc _CONCAT(_http_resource_desc_##_name, _list_end)[];    \
-	__z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail,           \
-				&_CONCAT(_http_resource_desc_##_name, _list_start)[0],         \
-				&_CONCAT(_http_resource_desc_##_name, _list_end)[0],           \
-				_sec_tag_list, _sec_tag_list_size);                            \
-	BUILD_ASSERT(IS_ENABLED(CONFIG_NET_SOCKETS_SOCKOPT_TLS),                               \
+#define HTTPS_SERVICE_DEFINE(_name, _host, _port, _concurrent, _backlog, _detail, _sec_tag_list,   \
+			     _sec_tag_list_size)                                                   \
+	extern struct http_resource_desc _CONCAT(_http_resource_desc_##_name, _list_start)[];      \
+	extern struct http_resource_desc _CONCAT(_http_resource_desc_##_name, _list_end)[];        \
+	__z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail,               \
+				&_CONCAT(_http_resource_desc_##_name, _list_start)[0],             \
+				&_CONCAT(_http_resource_desc_##_name, _list_end)[0],               \
+				_sec_tag_list, _sec_tag_list_size);                                \
+	BUILD_ASSERT(IS_ENABLED(CONFIG_NET_SOCKETS_SOCKOPT_TLS),                                   \
 		     "TLS is required for HTTP secure (CONFIG_NET_SOCKETS_SOCKOPT_TLS)")
 
 /**
