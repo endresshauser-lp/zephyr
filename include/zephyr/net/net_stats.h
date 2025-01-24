@@ -293,6 +293,8 @@ struct net_stats_tc {
 #endif
 		/** Number of packets sent for this traffic class */
 		net_stats_t pkts;
+		/** Number of packets dropped for this traffic class */
+		net_stats_t dropped;
 		/** Number of bytes sent for this traffic class */
 		net_stats_t bytes;
 		/** Priority of this traffic class */
@@ -310,6 +312,8 @@ struct net_stats_tc {
 #endif
 		/** Number of packets received for this traffic class */
 		net_stats_t pkts;
+		/** Number of packets dropped for this traffic class */
+		net_stats_t dropped;
 		/** Number of bytes received for this traffic class */
 		net_stats_t bytes;
 		/** Priority of this traffic class */
