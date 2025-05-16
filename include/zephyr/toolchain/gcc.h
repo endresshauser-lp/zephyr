@@ -133,14 +133,23 @@
 #endif
 
 /* Unaligned access */
-#define UNALIGNED_GET(g)						\
-__extension__ ({							\
-	struct  __attribute__((__packed__)) {				\
-		__typeof__(*(g)) __v;					\
-	} *__g = (__typeof__(__g)) (g);					\
-	__g->__v;							\
+#define UNALIGNED_GET(g)							\
+__extension__ ({								\
+	__typeof__(*(g)) __v;							\
+	__builtin_memcpy((void *)&__v, ((const void *)(g)), sizeof(*(g)));	\
+	__v;									\
 })
 
+#define UNALIGNED_GET_STRUCT(s, e)						\
+__extension__ ({								\
+	__typeof__((s)->e) __v;							\
+	__builtin_memcpy(							\
+		(void *)&__v,							\
+		((const void *)(s)) + __builtin_offsetof(__typeof__(*(s)), e),	\
+		sizeof((s)->e)							\
+	);									\
+	__v;									\
+})
 
 #if (__GNUC__ >= 7) && (defined(CONFIG_ARM) || defined(CONFIG_ARM64))
 
