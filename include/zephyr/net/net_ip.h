@@ -810,7 +810,7 @@ static inline void net_ipv6_addr_prefix_mask(const uint8_t *inaddr,
  */
 static inline bool net_ipv4_is_addr_loopback(struct in_addr *addr)
 {
-	return addr->s4_addr[0] == 127U;
+	return UNALIGNED_GET_STRUCT(addr, s4_addr[0]) == 127U;
 }
 
 /**
@@ -822,7 +822,7 @@ static inline bool net_ipv4_is_addr_loopback(struct in_addr *addr)
  */
 static inline bool net_ipv4_is_addr_unspecified(const struct in_addr *addr)
 {
-	return UNALIGNED_GET(&addr->s_addr) == 0;
+	return UNALIGNED_GET_STRUCT(addr, s_addr) == 0;
 }
 
 /**
@@ -834,7 +834,7 @@ static inline bool net_ipv4_is_addr_unspecified(const struct in_addr *addr)
  */
 static inline bool net_ipv4_is_addr_mcast(const struct in_addr *addr)
 {
-	return (ntohl(UNALIGNED_GET(&addr->s_addr)) & 0xF0000000) == 0xE0000000;
+	return (ntohl(UNALIGNED_GET_STRUCT(addr, s_addr)) & 0xF0000000) == 0xE0000000;
 }
 
 /**
@@ -923,7 +923,7 @@ static inline void net_ipv6_addr_copy_raw(uint8_t *dest,
 static inline bool net_ipv4_addr_cmp(const struct in_addr *addr1,
 				     const struct in_addr *addr2)
 {
-	return UNALIGNED_GET(&addr1->s_addr) == UNALIGNED_GET(&addr2->s_addr);
+	return UNALIGNED_GET_STRUCT(addr1, s_addr) == UNALIGNED_GET_STRUCT(addr2, s_addr);
 }
 
 /**
