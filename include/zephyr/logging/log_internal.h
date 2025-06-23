@@ -163,6 +163,8 @@ static inline bool z_log_is_local_domain(uint8_t domain_id)
  */
 log_timestamp_t z_log_timestamp(void);
 
+extern k_tid_t log_core_proc_tid;
+
 #ifdef __cplusplus
 }
 #endif
