@@ -559,13 +559,13 @@ extern "C" {
 #else
 #define Z_CONSTIFY(v) (_Generic((v), char * : (const char *)(uintptr_t)(v), default : (v)))
 #define Z_CBPRINTF_ARG_SIZE(v) ({\
-	__auto_type __v = (Z_CONSTIFY(v)) + 0; \
+	__auto_type __v = (Z_CONSTIFY(v)) + 0; /* NOLINT(performance-no-int-to-ptr) */ \
 	/* Static code analysis may complain about unused variable. */ \
 	(void)__v; \
 	size_t __arg_size = _Generic((v), \
 		float : sizeof(double), \
 		default : \
-			sizeof((__v)) \
+			sizeof((__v)) /* NOLINT(bugprone-sizeof-expression): false-positive */ \
 		); \
 	__arg_size; \
 })
@@ -580,41 +580,43 @@ extern "C" {
 #ifdef __cplusplus
 #define Z_CBPRINTF_STORE_ARG(buf, arg) z_cbprintf_cxx_store_arg(buf, arg)
 #else
+#if Z_CBPRINTF_VA_STACK_LL_DBL_MEMCPY
 #define Z_CBPRINTF_STORE_ARG(buf, arg) do { \
-	if (Z_CBPRINTF_VA_STACK_LL_DBL_MEMCPY) { \
-		/* If required, copy arguments by word to avoid unaligned access.*/ \
-		__auto_type _v = (Z_CONSTIFY(arg)) + 0; \
-		double _d = _Generic((arg) + 0, \
-				float : (arg) + 0, \
-				default : \
-					0.0); \
-		/* Static code analysis may complain about unused variable. */ \
-		(void)_v; \
-		(void)_d; \
-		size_t arg_size = Z_CBPRINTF_ARG_SIZE(arg); \
-		size_t _wsize = arg_size / sizeof(int); \
-		z_cbprintf_wcpy((int *)(buf), \
-			      (int *) _Generic((arg) + 0, float : &_d, default : &_v), \
-			      _wsize); \
-	} else { \
-		*_Generic((arg) + 0, \
-			char : (int *)(buf), \
-			unsigned char: (int *)(buf), \
-			short : (int *)(buf), \
-			unsigned short : (int *)(buf), \
-			int : (int *)(buf), \
-			unsigned int : (unsigned int *)(buf), \
-			long : (long *)(buf), \
-			unsigned long : (unsigned long *)(buf), \
-			long long : (long long *)(buf), \
-			unsigned long long : (unsigned long long *)(buf), \
-			float : (double *)(buf), \
-			double : (double *)(buf), \
-			long double : (long double *)(buf), \
+	/* If required, copy arguments by word to avoid unaligned access.*/ \
+	__auto_type _v = (Z_CONSTIFY(arg)) + 0; \
+	double _d = _Generic((arg) + 0, \
+			float : (arg) + 0, \
 			default : \
-				(const void **)(buf)) = (arg); \
-	} \
+				0.0); \
+	/* Static code analysis may complain about unused variable. */ \
+	(void)_v; \
+	(void)_d; \
+	size_t arg_size = Z_CBPRINTF_ARG_SIZE(arg); \
+	size_t _wsize = arg_size / sizeof(int); \
+	z_cbprintf_wcpy((int *)(buf), \
+		      (int *) _Generic((arg) + 0, float : &_d, default : &_v), \
+		      _wsize); \
 } while (false)
+#else
+#define Z_CBPRINTF_STORE_ARG(buf, arg) do { \
+	*_Generic((arg) + 0, \
+		char : (int *)(buf), \
+		unsigned char: (int *)(buf), \
+		short : (int *)(buf), \
+		unsigned short : (int *)(buf), \
+		int : (int *)(buf), \
+		unsigned int : (unsigned int *)(buf), \
+		long : (long *)(buf), \
+		unsigned long : (unsigned long *)(buf), \
+		long long : (long long *)(buf), \
+		unsigned long long : (unsigned long long *)(buf), \
+		float : (double *)(buf), \
+		double : (double *)(buf), \
+		long double : (long double *)(buf), \
+		default : \
+			(const void **)(buf)) = (arg); \
+} while (false)
+#endif
 #endif
 
 /** @brief Return alignment needed for given argument.
