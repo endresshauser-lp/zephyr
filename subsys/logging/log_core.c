@@ -104,7 +104,7 @@ static bool panic_mode;
 static bool backend_attached;
 static atomic_t buffered_cnt;
 static atomic_t dropped_cnt;
-static k_tid_t proc_tid;
+k_tid_t log_core_proc_tid;
 static struct k_timer log_process_thread_timer;
 
 static log_timestamp_t dummy_timestamp(void);
@@ -168,7 +168,7 @@ static void z_log_msg_post_finalize(void)
 		(void)log_process();
 
 		k_spin_unlock(&process_lock, key);
-	} else if (proc_tid != NULL) {
+	} else if (log_core_proc_tid != NULL) {
 		/*
 		 * If CONFIG_LOG_PROCESS_TRIGGER_THRESHOLD == 1,
 		 * timer is never needed. We release the processing
@@ -386,7 +386,7 @@ void log_thread_trigger(void)
 
 static void thread_set(k_tid_t process_tid)
 {
-	proc_tid = process_tid;
+	log_core_proc_tid = process_tid;
 
 	if (IS_ENABLED(CONFIG_LOG_MODE_IMMEDIATE)) {
 		return;
