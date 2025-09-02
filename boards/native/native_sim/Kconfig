@@ -15,7 +15,7 @@ config BOARD_NATIVE_SIM
 
 if BOARD_NATIVE_SIM
 
-comment "Native Simular (Single Core) options"
+comment "Native Simulator (Single Core) options"
 
 config NATIVE_SIM_NATIVE_POSIX_COMPAT
 	bool "Pretend to be a native_posix board"
