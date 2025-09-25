@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/mdio.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/mdio.h>
@@ -36,6 +37,9 @@ LOG_MODULE_REGISTER(phy_adin, CONFIG_PHY_LOG_LEVEL);
 
 /* Software reset, CLK_25 disabled time*/
 #define ADIN1100_PHY_SFT_RESET_MS				25U
+
+/* Hardware reset (90ms max)*/
+#define ADIN1100_PHY_HRD_RESET_MS				100U
 
 /* PHYs autonegotiation complete timeout */
 #define ADIN2111_AN_COMPLETE_AWAIT_TIMEOUT_MS			3000U
@@ -90,6 +94,7 @@ LOG_MODULE_REGISTER(phy_adin, CONFIG_PHY_LOG_LEVEL);
 
 struct phy_adin2111_config {
 	const struct device *mdio;
+    struct gpio_dt_spec reset;
 	uint8_t phy_addr;
 	bool led0_en;
 	bool led1_en;
@@ -348,7 +353,7 @@ static int phy_adin2111_get_link_state(const struct device *dev,
 	return 0;
 }
 
-static int phy_adin2111_reset(const struct device *dev)
+static int phy_adin2111_sw_reset(const struct device *dev)
 {
 	int ret;
 
@@ -358,6 +363,36 @@ static int phy_adin2111_reset(const struct device *dev)
 	}
 
 	k_msleep(ADIN1100_PHY_SFT_RESET_MS);
+
+	return 0;
+}
+
+static int phy_adin2111_hw_reset(const struct device *dev)
+{
+	int ret;
+	const struct phy_adin2111_config *const cfg = dev->config;
+
+	if (cfg->reset.port != NULL) {
+		if (!gpio_is_ready_dt(&cfg->reset)) {
+			LOG_ERR("Reset GPIO device %s is not ready",
+			cfg->reset.port->name);
+			return -ENODEV;
+		}
+
+		ret = gpio_pin_configure_dt(&cfg->reset, GPIO_OUTPUT_INACTIVE);
+		if (ret < 0) {
+			LOG_ERR("Failed to configure reset GPIO, %d", ret);
+			return ret;
+		}
+
+		/* perform hard reset */
+		/* assert pin low for 16 µs (10 µs min) */
+		gpio_pin_set_dt(&cfg->reset, 1);
+		k_busy_wait(16U);
+		/* deassert and wait for 90 ms (max) for clocks stabilisation */
+		gpio_pin_set_dt(&cfg->reset, 0);
+		k_msleep(ADIN1100_PHY_HRD_RESET_MS);
+	}
 
 	return 0;
 }
@@ -440,11 +475,21 @@ static int phy_adin2111_init(const struct device *dev)
 	data->state.speed = LINK_FULL_10BASE;
 
 	/*
+	 * If we have a dedicated reset pin, do a hardware reset.
+	 * */
+    if (cfg->reset.port != NULL) {
+		ret = phy_adin2111_hw_reset(dev);
+		if (ret < 0) {
+			return ret;
+		}
+	}
+
+	/*
 	 * For adin1100 and further mii stuff,
 	 * reset may not be performed from the mac layer, doing a clean reset here.
 	 */
 	if (cfg->mii) {
-		ret = phy_adin2111_reset(dev);
+		ret = phy_adin2111_sw_reset(dev);
 		if (ret < 0) {
 			return ret;
 		}
@@ -624,6 +669,7 @@ static DEVICE_API(ethphy, phy_adin2111_api) = {
 		.led0_en = DT_INST_PROP(n, led0_en),					\
 		.led1_en = DT_INST_PROP(n, led1_en),					\
 		.tx_24v = !(DT_INST_PROP(n, disable_tx_mode_24v)),			\
+		.reset = GPIO_DT_SPEC_INST_GET_OR(n, reset_gpios, { 0 }),	\
 		IF_ENABLED(DT_HAS_COMPAT_STATUS_OKAY(adi_adin1100_phy),			\
 		(.mii = 1))								\
 	};										\

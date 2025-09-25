@@ -13,6 +13,9 @@ properties:
   reg:
     required: true
     description: 5-bit physical/port address (PRTAD).
+  reset-gpios:
+    type: phandle-array
+    description: The reset pin of ADIN2111.
   led0-en:
     type: boolean
     description: Enable LED 0.
