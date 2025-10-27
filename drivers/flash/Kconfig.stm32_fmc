@@ -1,0 +1,18 @@
+# STM32 FMC flash driver configuration options
+
+# Copyright (c) 2025 CodeWrights GmbH
+# SPDX-License-Identifier: Apache-2.0
+
+config FLASH_STM32_FMC_NAND
+	bool "STM32 FMC NAND Flash driver"
+	default y
+	depends on DT_HAS_ST_STM32_FMC_NAND_ENABLED
+	select MEMC
+	select USE_STM32_LL_FMC
+	select USE_STM32_HAL_NAND
+	select FLASH_HAS_DRIVER_ENABLED
+	select FLASH_PAGE_LAYOUT
+	select FLASH_HAS_PAGE_LAYOUT
+	select FLASH_HAS_EXPLICIT_ERASE
+	help
+	  Enable parallel NAND flash support on the STM32 family of processors.

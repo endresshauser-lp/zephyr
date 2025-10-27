@@ -1,0 +1,64 @@
+# Copyright (c) 2025 CodeWrights GmbH
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  STM32 Flexible Memory Controller (NAND Flash controller).
+
+  The FMC generates the appropriate signal timings to drive 8- and 16-bit
+  NAND flash memories.
+
+  A unique Chip Select signal (NE) is used per bank. All the other
+  signals (addresses, data and control) are shared. A wide range of
+  devices is supported through programmable timings.
+
+  Refer to the reference manual for more details.
+
+  The FMC NAND controller is defined below the FMC node and banks are
+  defined as child nodes of the FMC NAND controller node.
+
+  You can enable the controller in devicetree as follows:
+
+  &fmc {
+    status = "okay";
+    pinctrl-0 = <&fmc_nce_pc8 &fmc_ale_pd12 ...>;
+    pinctrl-names = "default";
+
+    nand {
+      status = "okay";
+      compatible = "st,stm32-fmc-nand";
+
+      #address-cells = <1>;
+      #size-cells = <0>;
+
+      mt29f4g08abbda@3 {
+        reg = <0x3>;
+      };
+    };
+  };
+
+  Use constants defined in dt-bindings/memory-controller/stm32-fmc-nand.h.
+
+compatible: "st,stm32-fmc-nand"
+
+include: base.yaml
+
+properties:
+  "#address-cells":
+    required: true
+    const: 1
+
+  "#size-cells":
+    required: true
+    const: 0
+
+child-binding:
+  description: NAND bank.
+
+  properties:
+    reg:
+      type: int
+      required: true
+      description: |
+          NAND Bank value.
+          This is used to select the bank to which the device is connected.
+          It should be equal to a value of STM32_FMC_NAND_BANKx.
