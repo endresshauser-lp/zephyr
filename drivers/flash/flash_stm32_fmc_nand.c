@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
 /*
  * __Ideas__
  *
@@ -19,11 +18,8 @@
  *   - Host
  *   - Software
  *
- * - Use DMA
- *
  * - Use ex_op API to expose acceleration feature for FTL
  */
-
 
 #define DT_DRV_COMPAT st_stm32_fmc_nand
 
@@ -31,12 +27,29 @@
 #include <stdint.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/memc/memc_stm32.h>
-#include <zephyr/logging/log.h>
 
+#define STM32_FMC_NAND_NODE    DT_DRV_INST(0)
+#define STM32_FMC_NAND_USE_DMA DT_NODE_HAS_PROP(STM32_FMC_NAND_NODE, dmas)
+
+#if STM32_FMC_NAND_USE_DMA
+#include <zephyr/drivers/dma.h>
+#include <zephyr/drivers/dma/dma_stm32.h>
+#endif /* STM32_FMC_NAND_USE_DMA */
+
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(flash_stm32_fmc_nand, CONFIG_FLASH_LOG_LEVEL);
 
 #define PAGE_BUFFER_ALIGNMENT 4
 #define PAGE_BUFFER_SIZE      2048 /* TODO: Move to kconfig */
+
+#if STM32_FMC_NAND_USE_DMA
+struct stream {
+	const struct device *dev;
+	uint32_t channel;
+	struct dma_config cfg;
+	struct dma_block_config block_cfg;
+};
+#endif /* STM32_FMC_NAND_USE_DMA */
 
 struct flash_stm32_fmc_nand_config {
 	struct flash_parameters parameters;
@@ -52,6 +65,9 @@ struct flash_stm32_fmc_nand_config {
 
 struct flash_stm32_fmc_nand_data {
 	NAND_HandleTypeDef nand;
+#if STM32_FMC_NAND_USE_DMA
+	struct stream dma;
+#endif /* STM32_FMC_NAND_USE_DMA */
 };
 
 NAND_AddressTypeDef flash_stm32_fmc_nand_calculate_address(const struct device *dev, off_t addr)
@@ -133,9 +149,19 @@ static int flash_stm32_fmc_nand_write(const struct device *dev, off_t addr, cons
 	while (size > 0) {
 		NAND_AddressTypeDef nand_addr = flash_stm32_fmc_nand_calculate_address(dev, addr);
 
+#if STM32_FMC_NAND_USE_DMA
+		int ret = dma_reload(data->dma.dev, data->dma.channel, (uint32_t)src,
+				     (uint32_t)config->page_buffer, config->page_size);
+		if (ret != 0) {
+			LOG_ERR("Failed to reload DMA transfer on channel %d with error %d",
+				data->dma.channel, ret);
+			return -EIO;
+		}
+#else
 		memcpy(config->page_buffer, src, config->page_size);
+#endif /* STM32_FMC_NAND_USE_DMA */
 
-		int ret = HAL_NAND_Write_Page_8b(&data->nand, &nand_addr, config->page_buffer, 1);
+		ret = HAL_NAND_Write_Page_8b(&data->nand, &nand_addr, config->page_buffer, 1);
 		if (ret != HAL_OK) {
 			LOG_ERR("HAL_NAND_Write_Page_8b() failed with error %d", ret);
 			return -EIO;
@@ -174,7 +200,18 @@ static int flash_stm32_fmc_nand_read(const struct device *dev, off_t addr, void 
 			return -EIO;
 		}
 
+#if STM32_FMC_NAND_USE_DMA
+		ret = dma_reload(data->dma.dev, data->dma.channel,
+				 (uint32_t)(config->page_buffer + offset), (uint32_t)dest, chunk);
+		if (ret != 0) {
+			LOG_ERR("Failed to reload DMA transfer on channel %d with error %d",
+				data->dma.channel, ret);
+			return -EIO;
+		}
+#else
 		memcpy(dest, &config->page_buffer[offset], chunk);
+#endif /* STM32_FMC_NAND_USE_DMA */
+
 		dest = (uint8_t *)dest + chunk;
 		addr += chunk;
 		size -= chunk;
@@ -241,18 +278,10 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	data->nand.Config.ExtraCommandEnable = DISABLE;
 
 	FMC_NAND_PCC_TimingTypeDef com_space_timing = {
-		.SetupTime = 0,
-		.WaitSetupTime = 2,
-		.HoldSetupTime = 1,
-		.HiZSetupTime = 0
-	};
+		.SetupTime = 0, .WaitSetupTime = 2, .HoldSetupTime = 1, .HiZSetupTime = 0};
 
 	FMC_NAND_PCC_TimingTypeDef att_space_timing = {
-		.SetupTime = 0,
-		.WaitSetupTime = 2,
-		.HoldSetupTime = 1,
-		.HiZSetupTime = 0
-	};
+		.SetupTime = 0, .WaitSetupTime = 2, .HoldSetupTime = 1, .HiZSetupTime = 0};
 
 	int ret;
 
@@ -275,9 +304,31 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 		return -EIO;
 	}
 
-	LOG_INF("Flash found! ID: %02X %02X %02X %02X",
-		nand_id.Maker_Id, nand_id.Device_Id,
+	LOG_INF("Flash found! ID: %02X %02X %02X %02X", nand_id.Maker_Id, nand_id.Device_Id,
 		nand_id.Third_Id, nand_id.Fourth_Id);
+
+#if STM32_FMC_NAND_USE_DMA
+	/* DMA configuration */
+	if (!device_is_ready(data->dma.dev)) {
+		LOG_ERR("DMA %s device not ready", data->dma.dev->name);
+		return -ENODEV;
+	}
+
+	/* Dummy configuration to avoid warnings in dma_config(). The correct addresses are set
+	 * with dma_reload(). */
+	data->dma.block_cfg.source_address = (uint32_t)config->page_buffer;
+	data->dma.block_cfg.dest_address = (uint32_t)config->page_buffer;
+
+	data->dma.cfg.head_block = &data->dma.block_cfg;
+
+	ret = dma_config(data->dma.dev, data->dma.channel, &data->dma.cfg);
+	if (ret != 0) {
+		LOG_ERR("Failed to configure DMA channel %d with error %d", data->dma.channel, ret);
+		return -EIO;
+	}
+
+	LOG_INF("FMC NAND with DMA transfer");
+#endif /* STM32_FMC_NAND_USE_DMA */
 
 	// TODO: Verify this works correctly, no bad blocks detected for my chip
 	for (size_t block_id = 0; block_id < 4096; block_id++) {
@@ -328,6 +379,20 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	return 0;
 }
 
+/* This function is executed in the interrupt context */
+#if STM32_FMC_NAND_USE_DMA
+static void fmc_nand_dma_callback(const struct device *dev, void *user_data, uint32_t channel,
+				  int status)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(user_data);
+
+	if (status < 0) {
+		LOG_ERR("DMA callback error %d with channel %d", status, channel);
+	}
+}
+#endif /* STM32_FMC_NAND_USE_DMA */
+
 static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 	.erase = flash_stm32_fmc_nand_erase,
 	.write = flash_stm32_fmc_nand_write,
@@ -338,6 +403,31 @@ static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 	.page_layout = flash_stm32_fmc_nand_page_layout,
 #endif
 };
+
+#if STM32_FMC_NAND_USE_DMA
+#define DMA_CHANNEL_CONFIG(node, dir) DT_DMAS_CELL_BY_NAME(node, dir, channel_config)
+
+#define FMC_NAND_DMA_CHANNEL_INIT(node, dir)                                                       \
+	.dev = DEVICE_DT_GET(DT_DMAS_CTLR(node)),                                                  \
+	.channel = DT_DMAS_CELL_BY_NAME(node, dir, channel),                                       \
+	.cfg = {                                                                                   \
+		.channel_direction = MEMORY_TO_MEMORY,                                             \
+		.channel_priority = STM32_DMA_CONFIG_PRIORITY(DMA_CHANNEL_CONFIG(node, dir)),      \
+		.source_data_size =                                                                \
+			STM32_DMA_CONFIG_PERIPHERAL_DATA_SIZE(DMA_CHANNEL_CONFIG(node, dir)),      \
+		.dest_data_size =                                                                  \
+			STM32_DMA_CONFIG_MEMORY_DATA_SIZE(DMA_CHANNEL_CONFIG(node, dir)),          \
+		.block_count = 1,                                                                  \
+		.dma_callback = fmc_nand_dma_callback,                                             \
+	},
+
+#define FMC_NAND_DMA_CHANNEL(node, dir)                                                            \
+	.dma = {COND_CODE_1(DT_DMAS_HAS_NAME(node, dir),                                           \
+			    (FMC_NAND_DMA_CHANNEL_INIT(node, dir)),                                \
+			    (NULL)) },
+#else
+#define FMC_NAND_DMA_CHANNEL(node, dir)
+#endif /* STM32_FMC_NAND_USE_DMA */
 
 /* TODO: Adjust parameters based on Device Tree */
 #define LAYOUT_PAGES_PROP(n)                                                                       \
@@ -365,7 +455,8 @@ static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 		.page_buffer = flash_stm32_fmc_nand_page_buffer_##n,                               \
 		LAYOUT_PAGES_PROP(n)};                                                             \
                                                                                                    \
-	static struct flash_stm32_fmc_nand_data flash_stm32_fmc_nand_data_##n;                     \
+	static struct flash_stm32_fmc_nand_data flash_stm32_fmc_nand_data_##n = {                  \
+		FMC_NAND_DMA_CHANNEL(STM32_FMC_NAND_NODE, tx_rx)};                                 \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(n, flash_stm32_fmc_nand_init, NULL, &flash_stm32_fmc_nand_data_##n,  \
 			      &flash_stm32_fmc_nand_config_##n, POST_KERNEL,                       \
