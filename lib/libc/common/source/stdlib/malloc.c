@@ -33,8 +33,9 @@ LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 # if Z_MALLOC_PARTITION_EXISTS
 K_APPMEM_PARTITION_DEFINE(z_malloc_partition);
 #  define POOL_SECTION Z_GENERIC_SECTION(K_APP_DMEM_SECTION(z_malloc_partition))
+
 # else
-#  define POOL_SECTION __noinit
+#  define POOL_SECTION __attribute__((section(".z_malloc_section")))
 # endif /* CONFIG_USERSPACE */
 
 # if defined(CONFIG_MMU) && CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE < 0
