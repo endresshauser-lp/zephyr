@@ -77,6 +77,7 @@ struct stream {
 struct flash_stm32_fmc_nand_config {
 	struct flash_parameters parameters;
 	size_t page_size;
+	size_t spare_area_size;
 	size_t block_size;
 	size_t plane_size;
 	size_t flash_size;
@@ -437,7 +438,7 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	data->nand.Init.TARSetupTime = 0;
 
 	data->nand.Config.PageSize = (uint32_t)config->page_size;
-	data->nand.Config.SpareAreaSize = 64;
+	data->nand.Config.SpareAreaSize = (uint32_t)config->spare_area_size;
 	data->nand.Config.BlockSize = (uint32_t)(config->block_size / config->page_size);
 	data->nand.Config.BlockNbr = (uint32_t)(config->flash_size / config->block_size);
 	data->nand.Config.PlaneNbr = (uint32_t)(config->flash_size / config->plane_size);
@@ -526,49 +527,22 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	LOG_INF("FMC NAND with DMA transfer");
 #endif /* STM32_FMC_NAND_USE_DMA */
 
-	// TODO: Verify this works correctly, no bad blocks detected for my chip
-	for (size_t block_id = 0; block_id < 4096; block_id++) {
-		NAND_AddressTypeDef nand_addr;
-		bool is_bad = false;
+	const size_t block_count = config->flash_size / config->block_size;
 
-		/* Check first page of block */
-		nand_addr = flash_stm32_fmc_nand_calculate_address(dev, block_id * 64 *
-										config->page_size);
+	/* Check first page of each block */
+	for (size_t block_id = 0; block_id < block_count; block_id++) {
+		NAND_AddressTypeDef nand_addr =
+			flash_stm32_fmc_nand_calculate_address(dev, block_id * config->block_size);
 		ret = HAL_NAND_Read_SpareArea_8b(&data->nand, &nand_addr, config->page_buffer, 1);
-
 		if (ret != HAL_OK) {
 			LOG_ERR("HAL_NAND_Read_SpareArea_8b() failed with error %d", ret);
 			return -EIO;
 		}
 
-		for (size_t i = 0; i < 64; i++) {
-			if (config->page_buffer[i] == 0x00) {
-				is_bad = true;
-				LOG_HEXDUMP_DBG(config->page_buffer, 64, "Spare area data:");
-				break;
-			}
-		}
-
-		/* Check last page of block */
-		nand_addr = flash_stm32_fmc_nand_calculate_address(
-			dev, block_id * 64 * config->page_size + 63 * config->page_size);
-		ret = HAL_NAND_Read_SpareArea_8b(&data->nand, &nand_addr, config->page_buffer, 1);
-
-		if (ret != HAL_OK) {
-			LOG_ERR("HAL_NAND_Read_SpareArea_8b() failed with error %d", ret);
-			return -EIO;
-		}
-
-		for (size_t i = 0; i < 64; i++) {
-			if (config->page_buffer[i] == 0x00) {
-				is_bad = true;
-				LOG_HEXDUMP_DBG(config->page_buffer, 64, "Spare area data:");
-				break;
-			}
-		}
-
-		if (is_bad) {
+		if (config->page_buffer[0] != 0xFF) {
 			LOG_WRN("Block %zu is bad!", block_id);
+			LOG_HEXDUMP_DBG(config->page_buffer, sizeof(config->spare_area_size),
+					"Spare area data:");
 		}
 	}
 
@@ -648,6 +622,7 @@ static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 				.erase_value = 0xff,                                               \
 			},                                                                         \
 		.page_size = 2048,                                                                 \
+		.spare_area_size = 64,                                                             \
 		.block_size = 2048 * 64,                                                           \
 		.plane_size = 2048 * 64 * 2048,                                                    \
 		.flash_size = 2048 * 64 * 2048 * 4,                                                \
