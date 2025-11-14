@@ -13,11 +13,6 @@
  *   and chip-specific stuff can be handled by another chip
  *   specific driver which is a subnode of this node in DT.
  *
- * - Add ECC handling
- *   - On-Chip
- *   - Host
- *   - Software
- *
  * - Use ex_op API to expose acceleration feature for FTL
  */
 
@@ -94,7 +89,68 @@ struct flash_stm32_fmc_nand_data {
 #endif /* STM32_FMC_NAND_USE_DMA */
 };
 
-/** Copied HAL_NAND_Read_Page_8b() from stm32h5xx_hal_nand.c and modified to read one single page
+/* TODO: Move to flash memory specific driver without using STM32 NAND HAL driver */
+static int flash_mt29f4g08_enable_ecc(NAND_HandleTypeDef *hnand)
+{
+	uint32_t tickstart;
+	uint32_t deviceaddress;
+
+	/* Check the NAND controller state */
+	if (hnand->State == HAL_NAND_STATE_BUSY) {
+		return -EBUSY;
+	} else if (hnand->State == HAL_NAND_STATE_READY) {
+		/* Process Locked */
+		__HAL_LOCK(hnand);
+
+		/* Update the NAND controller state */
+		hnand->State = HAL_NAND_STATE_BUSY;
+
+		/* Identify the device address */
+		deviceaddress = NAND_DEVICE;
+
+		/* Send feature setting command sequence */
+		*(__IO uint8_t *)((uint32_t)(deviceaddress | CMD_AREA)) = 0xEF;
+		__DSB();
+		*(__IO uint8_t *)((uint32_t)(deviceaddress | ADDR_AREA)) = 0x90;
+		__DSB();
+		*(__IO uint8_t *)deviceaddress = 0x08;
+		__DSB();
+		*(__IO uint8_t *)deviceaddress = 0x00;
+		__DSB();
+		*(__IO uint8_t *)deviceaddress = 0x00;
+		__DSB();
+		*(__IO uint8_t *)deviceaddress = 0x00;
+		__DSB();
+
+		/* Get tick */
+		tickstart = HAL_GetTick();
+
+		/* Read status until NAND is ready */
+		while (HAL_NAND_Read_Status(hnand) != NAND_READY) {
+			if ((HAL_GetTick() - tickstart) > NAND_WRITE_TIMEOUT) {
+				/* Update the NAND controller state */
+				hnand->State = HAL_NAND_STATE_ERROR;
+
+				/* Process unlocked */
+				__HAL_UNLOCK(hnand);
+
+				return -ETIMEDOUT;
+			}
+		}
+
+		/* Update the NAND controller state */
+		hnand->State = HAL_NAND_STATE_READY;
+
+		/* Process unlocked */
+		__HAL_UNLOCK(hnand);
+	} else {
+		return -EIO;
+	}
+
+	return 0;
+}
+
+/* Copied HAL_NAND_Read_Page_8b() from stm32h5xx_hal_nand.c and modified to read one single page
  * with DMA transfer */
 static HAL_StatusTypeDef flash_stm32_fmc_nand_read_page(NAND_HandleTypeDef *hnand,
 							const NAND_AddressTypeDef *pAddress,
@@ -465,6 +521,13 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 		return -EIO;
 	}
 
+	/* Enable on-die ECC feature after reset */
+	ret = flash_mt29f4g08_enable_ecc(&data->nand);
+	if (ret != 0) {
+		LOG_ERR("Enabling on-die ECC failed with error %d", ret);
+		return -EIO;
+	}
+
 	NAND_IDTypeDef nand_id = {0};
 	ret = HAL_NAND_Read_ID(&data->nand, &nand_id);
 	if (ret != HAL_OK) {
@@ -541,7 +604,7 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 
 		if (config->page_buffer[0] != 0xFF) {
 			LOG_WRN("Block %zu is bad!", block_id);
-			LOG_HEXDUMP_DBG(config->page_buffer, sizeof(config->spare_area_size),
+			LOG_HEXDUMP_DBG(config->page_buffer, config->spare_area_size,
 					"Spare area data:");
 		}
 	}
@@ -625,7 +688,7 @@ static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 		.spare_area_size = 64,                                                             \
 		.block_size = 2048 * 64,                                                           \
 		.plane_size = 2048 * 64 * 2048,                                                    \
-		.flash_size = 2048 * 64 * 2048 * 4,                                                \
+		.flash_size = 2048 * 64 * 2048 * 2,                                                \
 		.page_buffer = flash_stm32_fmc_nand_page_buffer_##n,                               \
 		LAYOUT_PAGES_PROP(n)};                                                             \
                                                                                                    \
