@@ -241,27 +241,39 @@ static HAL_StatusTypeDef flash_stm32_fmc_nand_read_page(NAND_HandleTypeDef *hnan
 		*(__IO uint8_t *)((uint32_t)(deviceaddress | CMD_AREA)) = NAND_CMD_AREA_TRUE1;
 		__DSB();
 
-		if (hnand->Config.ExtraCommandEnable == ENABLE) {
-			/* Get tick */
-			tickstart = HAL_GetTick();
+		/* Get tick */
+		tickstart = HAL_GetTick();
 
-			/* Read status until NAND is ready */
-			while (HAL_NAND_Read_Status(hnand) != NAND_READY) {
-				if ((HAL_GetTick() - tickstart) > NAND_WRITE_TIMEOUT) {
-					/* Update the NAND controller state */
-					hnand->State = HAL_NAND_STATE_ERROR;
+		/* Read status until NAND is ready */
+		while (true) {
+			uint32_t status = HAL_NAND_Read_Status(hnand);
 
-					/* Process unlocked */
-					__HAL_UNLOCK(hnand);
+			if (status == NAND_READY) {
+				break;
+			} else if (status == NAND_ERROR) {
+				LOG_ERR("Uncorrectable ECC error detected");
 
-					return HAL_TIMEOUT;
-				}
+				/* Update the NAND controller state */
+				hnand->State = HAL_NAND_STATE_ERROR;
+
+				/* Process unlocked */
+				__HAL_UNLOCK(hnand);
+
+				return HAL_ERROR;
+			} else if ((HAL_GetTick() - tickstart) > NAND_WRITE_TIMEOUT) {
+				/* Update the NAND controller state */
+				hnand->State = HAL_NAND_STATE_ERROR;
+
+				/* Process unlocked */
+				__HAL_UNLOCK(hnand);
+
+				return HAL_TIMEOUT;
 			}
-
-			/* Go back to read mode */
-			*(__IO uint8_t *)((uint32_t)(deviceaddress | CMD_AREA)) = ((uint8_t)0x00);
-			__DSB();
 		}
+
+		/* Go back to read mode */
+		*(__IO uint8_t *)((uint32_t)(deviceaddress | CMD_AREA)) = ((uint8_t)0x00);
+		__DSB();
 
 		/* Get Data into Buffer */
 		if (HAL_DMA_Start(hdma, deviceaddress, (uint32_t)pBuffer, hnand->Config.PageSize) !=
