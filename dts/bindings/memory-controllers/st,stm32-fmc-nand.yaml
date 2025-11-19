@@ -1,4 +1,4 @@
-# Copyright (c) 2025 CodeWrights GmbH
+# Copyright (c) 2025 Endress+Hauser GmbH+Co. KG
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
@@ -26,7 +26,7 @@ description: |
     pinctrl-0 = <&fmc_nce_pc8 &fmc_ale_pd12 ...>;
     pinctrl-names = "default";
 
-    nand {
+    nand-controller {
       compatible = "st,stm32-fmc-nand";
       status = "okay";
 
@@ -36,7 +36,7 @@ description: |
       dmas = <&dma1 2 0 0x0000>;
       dma-names = "tx_rx";
 
-      mt29f4g08abbda@3 {
+      nand-flash@3 {
         reg = <0x3>;
       };
     };
@@ -66,5 +66,5 @@ child-binding:
       type: int
       required: true
       description: |
-        NAND bank value. This is used to select the bank to which the device is connected. It
-        should be equal to a value of STM32_FMC_NAND_BANKx (TODO).
+        NAND bank value. This is used to select the bank to which the flash device is connected.
+        It should be equal to a value of STM32_FMC_NAND_BANKx (TODO).

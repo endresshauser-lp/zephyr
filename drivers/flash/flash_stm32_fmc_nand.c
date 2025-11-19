@@ -1,30 +1,16 @@
 /*
- * Copyright (c) 2025 CodeWrights GmbH
+ * Copyright (c) 2025 Endress+Hauser GmbH+Co. KG
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * __Ideas__
- *
- * - Split this driver in controller and flash as features
- *   such as On-Chip ECC and various acceleration features
- *   are vendor specific. This file should be the controller
- *   and chip-specific stuff can be handled by another chip
- *   specific driver which is a subnode of this node in DT.
- *
- * - Use ex_op API to expose acceleration feature for FTL
- */
-
 #define DT_DRV_COMPAT st_stm32_fmc_nand
 
-#include <stddef.h>
-#include <stdint.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/memc/memc_stm32.h>
 
-#define STM32_FMC_NAND_NODE    DT_DRV_INST(0)
-#define STM32_FMC_NAND_USE_DMA DT_NODE_HAS_PROP(STM32_FMC_NAND_NODE, dmas)
+/* TODO: Does not work with multiple driver instances */
+#define STM32_FMC_NAND_USE_DMA DT_NODE_HAS_PROP(DT_DRV_INST(0), dmas)
 
 #if STM32_FMC_NAND_USE_DMA
 #include <zephyr/drivers/dma.h>
@@ -315,19 +301,19 @@ static NAND_AddressTypeDef flash_stm32_fmc_nand_calculate_address(const struct d
 	return nand_addr;
 }
 
-static int flash_stm32_fmc_nand_erase(const struct device *dev, off_t addr, size_t size)
+static int flash_stm32_fmc_nand_erase(const struct device *dev, off_t offset, size_t size)
 {
 	struct flash_stm32_fmc_nand_data *data = dev->data;
 	const struct flash_stm32_fmc_nand_config *config = dev->config;
 
 	/* validate address and size */
-	if ((addr < 0) || (addr >= config->flash_size) || (size > config->flash_size) ||
-	    ((config->flash_size - addr) < size)) {
+	if ((offset < 0) || (offset >= config->flash_size) || (size > config->flash_size) ||
+	    ((config->flash_size - offset) < size)) {
 		return -EINVAL;
 	}
 
 	/* address must be block-aligned */
-	if ((addr % config->block_size) != 0) {
+	if ((offset % config->block_size) != 0) {
 		return -EINVAL;
 	}
 
@@ -337,7 +323,7 @@ static int flash_stm32_fmc_nand_erase(const struct device *dev, off_t addr, size
 	}
 
 	while (size > 0) {
-		NAND_AddressTypeDef nand_addr = flash_stm32_fmc_nand_calculate_address(dev, addr);
+		NAND_AddressTypeDef nand_addr = flash_stm32_fmc_nand_calculate_address(dev, offset);
 
 		int ret = HAL_NAND_Erase_Block(&data->nand, &nand_addr);
 		if (ret != HAL_OK) {
@@ -345,110 +331,114 @@ static int flash_stm32_fmc_nand_erase(const struct device *dev, off_t addr, size
 			return -EIO;
 		}
 
-		addr += config->block_size;
+		offset += config->block_size;
 		size -= config->block_size;
 	}
 
 	return 0;
 }
 
-static int flash_stm32_fmc_nand_write(const struct device *dev, off_t addr, const void *src,
-				      size_t size)
+static int flash_stm32_fmc_nand_write(const struct device *dev, off_t offset, const void *data,
+				      size_t len)
 {
-	struct flash_stm32_fmc_nand_data *data = dev->data;
+	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
 	const struct flash_stm32_fmc_nand_config *config = dev->config;
 
 	/* validate address and size */
-	if ((addr < 0) || (addr >= config->flash_size) || (size > config->flash_size) ||
-	    ((config->flash_size - addr) < size)) {
+	if ((offset < 0) || (offset >= config->flash_size) || (len > config->flash_size) ||
+	    ((config->flash_size - offset) < len)) {
 		return -EINVAL;
 	}
 
-	/* addr must be page-aligned */
-	if ((addr % config->page_size) != 0) {
+	/* address must be page-aligned */
+	if ((offset % config->page_size) != 0) {
 		return -EINVAL;
 	}
 
 	/* size must be a multiple of page */
-	if ((size % config->page_size) != 0) {
+	if ((len % config->page_size) != 0) {
 		return -EINVAL;
 	}
 
-	while (size > 0) {
-		NAND_AddressTypeDef nand_addr = flash_stm32_fmc_nand_calculate_address(dev, addr);
+	while (len > 0) {
+		int ret;
+		NAND_AddressTypeDef nand_addr = flash_stm32_fmc_nand_calculate_address(dev, offset);
 
 #if STM32_FMC_NAND_USE_DMA
-		int ret = dma_reload(data->dma.dev, data->dma.channel, (uint32_t)src,
-				     (uint32_t)config->page_buffer, config->page_size);
+		ret = dma_reload(dev_data->dma.dev, dev_data->dma.channel, (uint32_t)data,
+				 (uint32_t)config->page_buffer, config->page_size);
 		if (ret != 0) {
 			LOG_ERR("Failed to reload DMA transfer on channel %d with error %d",
-				data->dma.channel, ret);
+				dev_data->dma.channel, ret);
 			return -EIO;
 		}
 #else
-		memcpy(config->page_buffer, src, config->page_size);
+		memcpy(config->page_buffer, data, config->page_size);
 #endif /* STM32_FMC_NAND_USE_DMA */
 
-		ret = HAL_NAND_Write_Page_8b(&data->nand, &nand_addr, config->page_buffer, 1);
+		ret = HAL_NAND_Write_Page_8b(&dev_data->nand, &nand_addr, config->page_buffer, 1);
 		if (ret != HAL_OK) {
 			LOG_ERR("HAL_NAND_Write_Page_8b() failed with error %d", ret);
 			return -EIO;
 		}
 
-		src = (const uint8_t *)src + config->page_size;
-		addr += config->page_size;
-		size -= config->page_size;
+		data = (const uint8_t *)data + config->page_size;
+		offset += config->page_size;
+		len -= config->page_size;
 	}
 
 	return 0;
 }
 
-static int flash_stm32_fmc_nand_read(const struct device *dev, off_t addr, void *dest, size_t size)
+static int flash_stm32_fmc_nand_read(const struct device *dev, off_t offset, void *data, size_t len)
 {
-	struct flash_stm32_fmc_nand_data *data = dev->data;
+	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
 	const struct flash_stm32_fmc_nand_config *config = dev->config;
 
 	/* validate address and size */
-	if ((addr < 0) || (addr >= config->flash_size) || (size > config->flash_size) ||
-	    ((config->flash_size - addr) < size)) {
+	if ((offset < 0) || (offset >= config->flash_size) || (len > config->flash_size) ||
+	    ((config->flash_size - offset) < len)) {
 		return -EINVAL;
 	}
 
-	while (size > 0) {
-		off_t offset = addr % config->page_size;
-		size_t chunk =
-			((offset + size) < config->page_size) ? size : (config->page_size - offset);
+	while (len > 0) {
+		off_t page_offset = offset % config->page_size;
+		size_t chunk = ((page_offset + len) < config->page_size)
+				       ? len
+				       : (config->page_size - page_offset);
 
-		NAND_AddressTypeDef nand_addr = flash_stm32_fmc_nand_calculate_address(dev, addr);
+		NAND_AddressTypeDef nand_addr = flash_stm32_fmc_nand_calculate_address(dev, offset);
 
 #if STM32_FMC_NAND_USE_DMA
-		int ret = flash_stm32_fmc_nand_read_page(&data->nand, &nand_addr,
-							 config->page_buffer, &data->dma.handle);
+		int ret = flash_stm32_fmc_nand_read_page(
+			&dev_data->nand, &nand_addr, config->page_buffer, &dev_data->dma.handle);
 		if (ret != HAL_OK) {
 			LOG_ERR("Reading page from NAND failed with error %d", ret);
 			return -EIO;
 		}
 
-		ret = dma_reload(data->dma.dev, data->dma.channel,
-				 (uint32_t)(config->page_buffer + offset), (uint32_t)dest, chunk);
+		ret = dma_reload(dev_data->dma.dev, dev_data->dma.channel,
+				 (uint32_t)(config->page_buffer + page_offset), (uint32_t)data,
+				 chunk);
 		if (ret != 0) {
 			LOG_ERR("Failed to reload DMA transfer on channel %d with error %d",
-				data->dma.channel, ret);
+				dev_data->dma.channel, ret);
 			return -EIO;
 		}
 #else
-		int ret = HAL_NAND_Read_Page_8b(&data->nand, &nand_addr, config->page_buffer, 1);
+		int ret =
+			HAL_NAND_Read_Page_8b(&dev_data->nand, &nand_addr, config->page_buffer, 1);
 		if (ret != HAL_OK) {
 			LOG_ERR("HAL_NAND_Read_Page_8b() failed with error %d", ret);
 			return -EIO;
 		}
 
-		memcpy(dest, &config->page_buffer[offset], chunk);
+		memcpy(data, &config->page_buffer[page_offset], chunk);
 #endif /* STM32_FMC_NAND_USE_DMA */
 
-		dest = (uint8_t *)dest + chunk;
-		addr += chunk;
-		size -= chunk;
+		data = (uint8_t *)data + chunk;
+		offset += chunk;
+		len -= chunk;
 	}
 
 	return 0;
@@ -486,8 +476,6 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 {
 	struct flash_stm32_fmc_nand_data *data = dev->data;
 	const struct flash_stm32_fmc_nand_config *config = dev->config;
-
-	LOG_DBG("flash_stm32_fmc_nand_init(%p) called", dev);
 
 	/* TODO: Remove this and according header */
 	uint32_t fmc_freq;
@@ -639,9 +627,9 @@ static void fmc_nand_dma_callback(const struct device *dev, void *user_data, uin
 #endif /* STM32_FMC_NAND_USE_DMA */
 
 static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
-	.erase = flash_stm32_fmc_nand_erase,
-	.write = flash_stm32_fmc_nand_write,
 	.read = flash_stm32_fmc_nand_read,
+	.write = flash_stm32_fmc_nand_write,
+	.erase = flash_stm32_fmc_nand_erase,
 	.get_parameters = flash_stm32_fmc_nand_get_parameters,
 	.get_size = flash_stm32_fmc_nand_get_size,
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
@@ -667,12 +655,12 @@ static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 		.dest_burst_length = 64,                                                           \
 		.block_count = 1,                                                                  \
 		.dma_callback = fmc_nand_dma_callback,                                             \
-	},
+	}
 
 #define FMC_NAND_DMA_CHANNEL(node, dir)                                                            \
 	.dma = {COND_CODE_1(DT_DMAS_HAS_NAME(node, dir),                                           \
 			    (FMC_NAND_DMA_CHANNEL_INIT(node, dir)),                                \
-			    (NULL)) },
+			    NULL)},
 #else
 #define FMC_NAND_DMA_CHANNEL(node, dir)
 #endif /* STM32_FMC_NAND_USE_DMA */
@@ -683,8 +671,7 @@ static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 		(.layout = {                                                                       \
 			.pages_count = 2048 * 2,                                                   \
 			.pages_size = 2048 * 64,                                                   \
-		},                                                                                 \
-		))
+		}))
 
 #define FLASH_STM32_FMC_NAND_INIT(n)                                                               \
 	static unsigned char __nocache __aligned(PAGE_BUFFER_ALIGNMENT)                            \
@@ -702,10 +689,11 @@ static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 		.plane_size = 2048 * 64 * 2048,                                                    \
 		.flash_size = 2048 * 64 * 2048 * 2,                                                \
 		.page_buffer = flash_stm32_fmc_nand_page_buffer_##n,                               \
-		LAYOUT_PAGES_PROP(n)};                                                             \
+		LAYOUT_PAGES_PROP(n),                                                              \
+	};                                                                                         \
                                                                                                    \
 	static struct flash_stm32_fmc_nand_data flash_stm32_fmc_nand_data_##n = {                  \
-		FMC_NAND_DMA_CHANNEL(STM32_FMC_NAND_NODE, tx_rx)};                                 \
+		FMC_NAND_DMA_CHANNEL(DT_DRV_INST(n), tx_rx)};                                      \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(n, flash_stm32_fmc_nand_init, NULL, &flash_stm32_fmc_nand_data_##n,  \
 			      &flash_stm32_fmc_nand_config_##n, POST_KERNEL,                       \
