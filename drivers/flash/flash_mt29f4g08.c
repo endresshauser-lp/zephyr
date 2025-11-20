@@ -97,19 +97,33 @@ static int flash_mt29f4g08_init(const struct device *dev)
 		return -ENODEV;
 	}
 
+	/* Reset NAND flash */
+	int ret = controller_api->ex_op(controller, FLASH_EX_OP_RESET, 0, NULL);
+	if (ret != 0) {
+		LOG_ERR("NAND flash reset failed with error %d", ret);
+		return -EIO;
+	}
+
 #ifdef CONFIG_FLASH_MT29F4G08_ECC
 	/* Enable on-die ECC feature */
 	struct nand_flash_feature ecc_feature = {
 		.feature_addr = ECC_FEATURE_ADDR,
 		.feature_data = ECC_FEATURE_DATA,
 	};
-	int ret = controller_api->ex_op(controller, NAND_FLASH_SET_FEATURE, (uintptr_t)&ecc_feature,
-					NULL);
+	ret = controller_api->ex_op(controller, NAND_FLASH_SET_FEATURE, (uintptr_t)&ecc_feature,
+				    NULL);
 	if (ret != 0) {
 		LOG_ERR("Enabling on-die ECC failed with error %d", ret);
 		return -EIO;
 	}
 #endif /* CONFIG_FLASH_MT29F4G08_ECC */
+
+	/* Check initial bad blocks */
+	ret = controller_api->ex_op(controller, NAND_FLASH_CHECK_BLOCKS, 0, NULL);
+	if (ret != 0) {
+		LOG_ERR("Checking bad blocks failed with error %d", ret);
+		return -EIO;
+	}
 
 	LOG_INF("MT29F4G08 flash initialized with controller %s", controller->name);
 

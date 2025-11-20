@@ -479,12 +479,35 @@ int flash_stm32_fmc_nand_ex_op(const struct device *dev, uint16_t code, const ui
 {
 	ARG_UNUSED(out);
 
-	int ret;
+	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
+	const struct flash_stm32_fmc_nand_config *config = dev->config;
+	int ret = 0;
 
 	switch (code) {
+	case FLASH_EX_OP_RESET:
+		/* Reset NAND flash */
+		ret = HAL_NAND_Reset(&dev_data->nand);
+		break;
+
+	case NAND_FLASH_CHECK_BLOCKS:
+		/* Check bad blocks in first page of each */
+		const size_t block_count = config->flash_size / config->block_size;
+
+		for (size_t block_id = 0; block_id < block_count; block_id++) {
+			NAND_AddressTypeDef nand_addr = flash_stm32_fmc_nand_calculate_address(
+				dev, block_id * config->block_size);
+			ret = HAL_NAND_Read_SpareArea_8b(&dev_data->nand, &nand_addr,
+							 config->page_buffer, 1);
+			if (ret == HAL_OK && config->page_buffer[0] != 0xFF) {
+				LOG_WRN("Block %zu is bad!", block_id);
+				LOG_HEXDUMP_INF(config->page_buffer, config->spare_area_size,
+						"Spare area data:");
+			}
+		}
+		break;
+
 	case NAND_FLASH_SET_FEATURE:
 		/* Set feature */
-		struct flash_stm32_fmc_nand_data *dev_data = dev->data;
 		struct nand_flash_feature *feature = (struct nand_flash_feature *)in;
 		ret = flash_stm32_fmc_nand_set_feature(&dev_data->nand, feature);
 		break;
@@ -537,13 +560,6 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	ret = HAL_NAND_Init(&dev_data->nand, &com_space_timing, &att_space_timing);
 	if (ret != HAL_OK) {
 		LOG_ERR("HAL_NAND_Init() failed with error %d", ret);
-		return -EIO;
-	}
-
-	/* TODO: Replace with FLASH_EX_OP_RESET */
-	ret = HAL_NAND_Reset(&dev_data->nand);
-	if (ret != HAL_OK) {
-		LOG_ERR("HAL_NAND_Reset() failed with error %d", ret);
 		return -EIO;
 	}
 
@@ -610,26 +626,6 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 
 	LOG_INF("FMC NAND with DMA transfer");
 #endif /* STM32_FMC_NAND_USE_DMA */
-
-	const size_t block_count = config->flash_size / config->block_size;
-
-	/* Check first page of each block */
-	for (size_t block_id = 0; block_id < block_count; block_id++) {
-		NAND_AddressTypeDef nand_addr =
-			flash_stm32_fmc_nand_calculate_address(dev, block_id * config->block_size);
-		ret = HAL_NAND_Read_SpareArea_8b(&dev_data->nand, &nand_addr, config->page_buffer,
-						 1);
-		if (ret != HAL_OK) {
-			LOG_ERR("HAL_NAND_Read_SpareArea_8b() failed with error %d", ret);
-			return -EIO;
-		}
-
-		if (config->page_buffer[0] != 0xFF) {
-			LOG_WRN("Block %zu is bad!", block_id);
-			LOG_HEXDUMP_DBG(config->page_buffer, config->spare_area_size,
-					"Spare area data:");
-		}
-	}
 
 	return 0;
 }

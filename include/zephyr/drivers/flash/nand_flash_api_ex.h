@@ -12,7 +12,8 @@
 #include <zephyr/drivers/flash.h>
 
 enum nand_flash_ex_ops {
-	NAND_FLASH_SET_FEATURE = FLASH_EX_OP_VENDOR_BASE,
+	NAND_FLASH_CHECK_BLOCKS = FLASH_EX_OP_VENDOR_BASE,
+	NAND_FLASH_SET_FEATURE,
 };
 
 struct nand_flash_feature {
