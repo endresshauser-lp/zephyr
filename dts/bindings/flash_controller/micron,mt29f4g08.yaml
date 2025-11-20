@@ -4,7 +4,7 @@
 description: |
   NAND flash driver for Micron MT29F4G08 flash memory.
 
-  The MT29F4G08 is a 4 GB NAND flash organised in pages of 2048 bytes each.
+  The MT29F4G08 is a 4 Gb NAND flash organised in pages of 2048 bytes each.
 
   Refer to the Micron MT29F4G08 datasheet for more details.
 

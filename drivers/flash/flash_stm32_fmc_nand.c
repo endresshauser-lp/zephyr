@@ -23,7 +23,6 @@
 LOG_MODULE_REGISTER(flash_stm32_fmc_nand, CONFIG_FLASH_LOG_LEVEL);
 
 #define PAGE_BUFFER_ALIGNMENT 4
-#define PAGE_BUFFER_SIZE      2048 /* TODO: Move to kconfig */
 
 #if STM32_FMC_NAND_USE_DMA
 static const uint32_t table_src_size[] = {
@@ -504,14 +503,13 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
 	const struct flash_stm32_fmc_nand_config *config = dev->config;
 
-	/* TODO: Remove this and according header */
+	/* TODO: Remove this and according Kconfig/header */
 	uint32_t fmc_freq;
 	memc_stm32_fmc_clock_rate(&fmc_freq);
 	LOG_DBG("FMC clock rate: %d Hz", fmc_freq);
 
 	dev_data->nand.Instance = FMC_NAND_DEVICE;
 
-	/* TODO: Load NAND parameters from Device Tree */
 	dev_data->nand.Init.NandBank = FMC_NAND_BANK3;
 	dev_data->nand.Init.Waitfeature = FMC_NAND_WAIT_FEATURE_ENABLE;
 	dev_data->nand.Init.MemoryDataWidth = FMC_NAND_MEM_BUS_WIDTH_8;
@@ -542,6 +540,7 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 		return -EIO;
 	}
 
+	/* TODO: Replace with FLASH_EX_OP_RESET */
 	ret = HAL_NAND_Reset(&dev_data->nand);
 	if (ret != HAL_OK) {
 		LOG_ERR("HAL_NAND_Reset() failed with error %d", ret);
@@ -691,29 +690,30 @@ static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 #define FMC_NAND_DMA_CHANNEL(node, dir)
 #endif /* STM32_FMC_NAND_USE_DMA */
 
-/* TODO: Adjust parameters based on Device Tree */
+/* A page in this context corresponds to the smallest erasable area which is a block */
 #define LAYOUT_PAGES_PROP(n)                                                                       \
 	IF_ENABLED(CONFIG_FLASH_PAGE_LAYOUT,                                                       \
 		(.layout = {                                                                       \
-			.pages_count = 2048 * 2,                                                   \
-			.pages_size = 2048 * 64,                                                   \
+			.pages_count = DT_PROP(DT_DRV_INST(n), flash_size) /                       \
+				       DT_PROP(DT_DRV_INST(n), block_size),                        \
+			.pages_size = DT_PROP(DT_DRV_INST(n), block_size),                         \
 		}))
 
 #define FLASH_STM32_FMC_NAND_INIT(n)                                                               \
 	static unsigned char __nocache __aligned(PAGE_BUFFER_ALIGNMENT)                            \
-	flash_stm32_fmc_nand_page_buffer_##n[PAGE_BUFFER_SIZE];                                    \
+	flash_stm32_fmc_nand_page_buffer_##n[DT_PROP(DT_DRV_INST(n), page_size)];                  \
                                                                                                    \
 	static const struct flash_stm32_fmc_nand_config flash_stm32_fmc_nand_config_##n = {        \
 		.parameters =                                                                      \
 			{                                                                          \
-				.write_block_size = 2048,                                          \
+				.write_block_size = DT_PROP(DT_DRV_INST(n), page_size),            \
 				.erase_value = 0xff,                                               \
 			},                                                                         \
-		.page_size = 2048,                                                                 \
-		.spare_area_size = 64,                                                             \
-		.block_size = 2048 * 64,                                                           \
-		.plane_size = 2048 * 64 * 2048,                                                    \
-		.flash_size = 2048 * 64 * 2048 * 2,                                                \
+		.page_size = DT_PROP(DT_DRV_INST(n), page_size),                                   \
+		.spare_area_size = DT_PROP(DT_DRV_INST(n), spare_area_size),                       \
+		.block_size = DT_PROP(DT_DRV_INST(n), block_size),                                 \
+		.plane_size = DT_PROP(DT_DRV_INST(n), plane_size),                                 \
+		.flash_size = DT_PROP(DT_DRV_INST(n), flash_size),                                 \
 		.page_buffer = flash_stm32_fmc_nand_page_buffer_##n,                               \
 		LAYOUT_PAGES_PROP(n),                                                              \
 	};                                                                                         \
