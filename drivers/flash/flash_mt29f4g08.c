@@ -4,12 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/* TODO: Rename this driver if it specifically requires STM32 FMC NAND */
 #define DT_DRV_COMPAT micron_mt29f4g08
 
 #include <zephyr/drivers/flash.h>
+#include <zephyr/drivers/flash/nand_flash_api_ex.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(flash_mt29f4g08, CONFIG_FLASH_LOG_LEVEL);
+
+#define ECC_FEATURE_ADDR 0x90
+#define ECC_FEATURE_DATA {0x08, 0x00, 0x00, 0x00}
 
 struct flash_mt29f4g08_config {
 	const struct device *controller;
@@ -83,13 +88,30 @@ static void flash_mt29f4g08_page_layout(const struct device *dev,
 static int flash_mt29f4g08_init(const struct device *dev)
 {
 	const struct flash_mt29f4g08_config *config = dev->config;
+	const struct device *controller = config->controller;
+	const struct flash_driver_api *controller_api =
+		(const struct flash_driver_api *)controller->api;
 
-	if (!device_is_ready(config->controller)) {
-		LOG_ERR("Parent flash controller %s is not ready", config->controller->name);
+	if (!device_is_ready(controller)) {
+		LOG_ERR("Parent flash controller %s is not ready", controller->name);
 		return -ENODEV;
 	}
 
-	LOG_INF("MT29F4G08 flash initialized with controller %s", config->controller->name);
+#ifdef CONFIG_FLASH_MT29F4G08_ECC
+	/* Enable on-die ECC feature */
+	struct nand_flash_feature ecc_feature = {
+		.feature_addr = ECC_FEATURE_ADDR,
+		.feature_data = ECC_FEATURE_DATA,
+	};
+	int ret = controller_api->ex_op(controller, NAND_FLASH_SET_FEATURE, (uintptr_t)&ecc_feature,
+					NULL);
+	if (ret != 0) {
+		LOG_ERR("Enabling on-die ECC failed with error %d", ret);
+		return -EIO;
+	}
+#endif /* CONFIG_FLASH_MT29F4G08_ECC */
+
+	LOG_INF("MT29F4G08 flash initialized with controller %s", controller->name);
 
 	return 0;
 }

@@ -7,6 +7,7 @@
 #define DT_DRV_COMPAT st_stm32_fmc_nand
 
 #include <zephyr/drivers/flash.h>
+#include <zephyr/drivers/flash/nand_flash_api_ex.h>
 #include <zephyr/drivers/memc/memc_stm32.h>
 
 /* TODO: Does not work with multiple driver instances */
@@ -75,8 +76,8 @@ struct flash_stm32_fmc_nand_data {
 #endif /* STM32_FMC_NAND_USE_DMA */
 };
 
-/* TODO: Move to flash memory specific driver without using STM32 NAND HAL driver */
-static int flash_mt29f4g08_enable_ecc(NAND_HandleTypeDef *hnand)
+static int flash_stm32_fmc_nand_set_feature(NAND_HandleTypeDef *hnand,
+					    const struct nand_flash_feature *feature)
 {
 	uint32_t tickstart;
 	uint32_t deviceaddress;
@@ -97,15 +98,15 @@ static int flash_mt29f4g08_enable_ecc(NAND_HandleTypeDef *hnand)
 		/* Send feature setting command sequence */
 		*(__IO uint8_t *)((uint32_t)(deviceaddress | CMD_AREA)) = 0xEF;
 		__DSB();
-		*(__IO uint8_t *)((uint32_t)(deviceaddress | ADDR_AREA)) = 0x90;
+		*(__IO uint8_t *)((uint32_t)(deviceaddress | ADDR_AREA)) = feature->feature_addr;
 		__DSB();
-		*(__IO uint8_t *)deviceaddress = 0x08;
+		*(__IO uint8_t *)deviceaddress = feature->feature_data[0];
 		__DSB();
-		*(__IO uint8_t *)deviceaddress = 0x00;
+		*(__IO uint8_t *)deviceaddress = feature->feature_data[1];
 		__DSB();
-		*(__IO uint8_t *)deviceaddress = 0x00;
+		*(__IO uint8_t *)deviceaddress = feature->feature_data[2];
 		__DSB();
-		*(__IO uint8_t *)deviceaddress = 0x00;
+		*(__IO uint8_t *)deviceaddress = feature->feature_data[3];
 		__DSB();
 
 		/* Get tick */
@@ -239,8 +240,9 @@ static HAL_StatusTypeDef flash_stm32_fmc_nand_read_page(NAND_HandleTypeDef *hnan
 			} else if (status == NAND_ERROR) {
 				LOG_ERR("Uncorrectable ECC error detected");
 
-				/* Update the NAND controller state */
-				hnand->State = HAL_NAND_STATE_ERROR;
+				/* Update the NAND controller state
+				   TODO: Correct error handling */
+				hnand->State = HAL_NAND_STATE_READY;
 
 				/* Process unlocked */
 				__HAL_UNLOCK(hnand);
@@ -303,7 +305,7 @@ static NAND_AddressTypeDef flash_stm32_fmc_nand_calculate_address(const struct d
 
 static int flash_stm32_fmc_nand_erase(const struct device *dev, off_t offset, size_t size)
 {
-	struct flash_stm32_fmc_nand_data *data = dev->data;
+	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
 	const struct flash_stm32_fmc_nand_config *config = dev->config;
 
 	/* validate address and size */
@@ -325,7 +327,7 @@ static int flash_stm32_fmc_nand_erase(const struct device *dev, off_t offset, si
 	while (size > 0) {
 		NAND_AddressTypeDef nand_addr = flash_stm32_fmc_nand_calculate_address(dev, offset);
 
-		int ret = HAL_NAND_Erase_Block(&data->nand, &nand_addr);
+		int ret = HAL_NAND_Erase_Block(&dev_data->nand, &nand_addr);
 		if (ret != HAL_OK) {
 			LOG_ERR("HAL_NAND_Erase_Block() failed with error %d", ret);
 			return -EIO;
@@ -472,9 +474,34 @@ static void flash_stm32_fmc_nand_page_layout(const struct device *dev,
 }
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
+#if CONFIG_FLASH_EX_OP_ENABLED
+int flash_stm32_fmc_nand_ex_op(const struct device *dev, uint16_t code, const uintptr_t in,
+			       void *out)
+{
+	ARG_UNUSED(out);
+
+	int ret;
+
+	switch (code) {
+	case NAND_FLASH_SET_FEATURE:
+		/* Set feature */
+		struct flash_stm32_fmc_nand_data *dev_data = dev->data;
+		struct nand_flash_feature *feature = (struct nand_flash_feature *)in;
+		ret = flash_stm32_fmc_nand_set_feature(&dev_data->nand, feature);
+		break;
+
+	default:
+		ret = -ENOTSUP;
+		break;
+	}
+
+	return ret;
+}
+#endif /* CONFIG_FLASH_EX_OP_ENABLED */
+
 static int flash_stm32_fmc_nand_init(const struct device *dev)
 {
-	struct flash_stm32_fmc_nand_data *data = dev->data;
+	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
 	const struct flash_stm32_fmc_nand_config *config = dev->config;
 
 	/* TODO: Remove this and according header */
@@ -482,24 +509,24 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	memc_stm32_fmc_clock_rate(&fmc_freq);
 	LOG_DBG("FMC clock rate: %d Hz", fmc_freq);
 
-	data->nand.Instance = FMC_NAND_DEVICE;
+	dev_data->nand.Instance = FMC_NAND_DEVICE;
 
 	/* TODO: Load NAND parameters from Device Tree */
-	data->nand.Init.NandBank = FMC_NAND_BANK3;
-	data->nand.Init.Waitfeature = FMC_NAND_WAIT_FEATURE_ENABLE;
-	data->nand.Init.MemoryDataWidth = FMC_NAND_MEM_BUS_WIDTH_8;
-	data->nand.Init.EccComputation = FMC_NAND_ECC_DISABLE;
-	data->nand.Init.ECCPageSize = FMC_NAND_ECC_PAGE_SIZE_2048BYTE;
-	data->nand.Init.TCLRSetupTime = 0;
-	data->nand.Init.TARSetupTime = 0;
+	dev_data->nand.Init.NandBank = FMC_NAND_BANK3;
+	dev_data->nand.Init.Waitfeature = FMC_NAND_WAIT_FEATURE_ENABLE;
+	dev_data->nand.Init.MemoryDataWidth = FMC_NAND_MEM_BUS_WIDTH_8;
+	dev_data->nand.Init.EccComputation = FMC_NAND_ECC_DISABLE;
+	dev_data->nand.Init.ECCPageSize = FMC_NAND_ECC_PAGE_SIZE_2048BYTE;
+	dev_data->nand.Init.TCLRSetupTime = 0;
+	dev_data->nand.Init.TARSetupTime = 0;
 
-	data->nand.Config.PageSize = (uint32_t)config->page_size;
-	data->nand.Config.SpareAreaSize = (uint32_t)config->spare_area_size;
-	data->nand.Config.BlockSize = (uint32_t)(config->block_size / config->page_size);
-	data->nand.Config.BlockNbr = (uint32_t)(config->flash_size / config->block_size);
-	data->nand.Config.PlaneNbr = (uint32_t)(config->flash_size / config->plane_size);
-	data->nand.Config.PlaneSize = (uint32_t)(config->plane_size / config->block_size);
-	data->nand.Config.ExtraCommandEnable = DISABLE;
+	dev_data->nand.Config.PageSize = (uint32_t)config->page_size;
+	dev_data->nand.Config.SpareAreaSize = (uint32_t)config->spare_area_size;
+	dev_data->nand.Config.BlockSize = (uint32_t)(config->block_size / config->page_size);
+	dev_data->nand.Config.BlockNbr = (uint32_t)(config->flash_size / config->block_size);
+	dev_data->nand.Config.PlaneNbr = (uint32_t)(config->flash_size / config->plane_size);
+	dev_data->nand.Config.PlaneSize = (uint32_t)(config->plane_size / config->block_size);
+	dev_data->nand.Config.ExtraCommandEnable = DISABLE;
 
 	FMC_NAND_PCC_TimingTypeDef com_space_timing = {
 		.SetupTime = 0, .WaitSetupTime = 2, .HoldSetupTime = 1, .HiZSetupTime = 0};
@@ -509,27 +536,20 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 
 	int ret;
 
-	ret = HAL_NAND_Init(&data->nand, &com_space_timing, &att_space_timing);
+	ret = HAL_NAND_Init(&dev_data->nand, &com_space_timing, &att_space_timing);
 	if (ret != HAL_OK) {
 		LOG_ERR("HAL_NAND_Init() failed with error %d", ret);
 		return -EIO;
 	}
 
-	ret = HAL_NAND_Reset(&data->nand);
+	ret = HAL_NAND_Reset(&dev_data->nand);
 	if (ret != HAL_OK) {
 		LOG_ERR("HAL_NAND_Reset() failed with error %d", ret);
 		return -EIO;
 	}
 
-	/* Enable on-die ECC feature after reset */
-	ret = flash_mt29f4g08_enable_ecc(&data->nand);
-	if (ret != 0) {
-		LOG_ERR("Enabling on-die ECC failed with error %d", ret);
-		return -EIO;
-	}
-
 	NAND_IDTypeDef nand_id = {0};
-	ret = HAL_NAND_Read_ID(&data->nand, &nand_id);
+	ret = HAL_NAND_Read_ID(&dev_data->nand, &nand_id);
 	if (ret != HAL_OK) {
 		LOG_ERR("HAL_NAND_Read_ID() failed with error %d", ret);
 		return -EIO;
@@ -544,45 +564,47 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	 * Due to use of NAND HAL and Zephyr API in current driver,
 	 * both HAL and Zephyr DMA drivers should be configured.
 	 */
-	if (!device_is_ready(data->dma.dev)) {
-		LOG_ERR("DMA %s device is not ready", data->dma.dev->name);
+	if (!device_is_ready(dev_data->dma.dev)) {
+		LOG_ERR("DMA %s device is not ready", dev_data->dma.dev->name);
 		return -ENODEV;
 	}
 
 	/* Proceed to the Zephyr DMA driver init */
 	/* Dummy configuration to avoid warnings in dma_config(). The correct addresses are set
 	 * with dma_reload(). */
-	data->dma.block_cfg.source_address = (uint32_t)config->page_buffer;
-	data->dma.block_cfg.dest_address = (uint32_t)config->page_buffer;
+	dev_data->dma.block_cfg.source_address = (uint32_t)config->page_buffer;
+	dev_data->dma.block_cfg.dest_address = (uint32_t)config->page_buffer;
 
-	data->dma.cfg.head_block = &data->dma.block_cfg;
+	dev_data->dma.cfg.head_block = &dev_data->dma.block_cfg;
 
-	ret = dma_config(data->dma.dev, data->dma.channel, &data->dma.cfg);
+	ret = dma_config(dev_data->dma.dev, dev_data->dma.channel, &dev_data->dma.cfg);
 	if (ret != 0) {
-		LOG_ERR("Failed to configure DMA channel %d with error %d", data->dma.channel, ret);
+		LOG_ERR("Failed to configure DMA channel %d with error %d", dev_data->dma.channel,
+			ret);
 		return -EIO;
 	}
 
 	/* Proceed to the HAL DMA driver init */
-	int index = find_lsb_set(data->dma.cfg.source_data_size) - 1;
+	int index = find_lsb_set(dev_data->dma.cfg.source_data_size) - 1;
 
 	/* Fill the structure for dma init */
-	data->dma.handle.Init.Request = 0; /* Zero for memory-to-memory transfer */
-	data->dma.handle.Init.Direction = DMA_MEMORY_TO_MEMORY;
-	data->dma.handle.Init.SrcInc = DMA_SINC_INCREMENTED;
-	data->dma.handle.Init.DestInc = DMA_DINC_INCREMENTED;
-	data->dma.handle.Init.SrcDataWidth = table_src_size[index];
-	data->dma.handle.Init.DestDataWidth = table_dest_size[index];
-	data->dma.handle.Init.Priority = table_priority[data->dma.cfg.channel_priority];
-	data->dma.handle.Init.SrcBurstLength = 64;
-	data->dma.handle.Init.DestBurstLength = 64;
-	data->dma.handle.Init.TransferAllocatedPort =
+	dev_data->dma.handle.Init.Request = 0; /* Zero for memory-to-memory transfer */
+	dev_data->dma.handle.Init.Direction = DMA_MEMORY_TO_MEMORY;
+	dev_data->dma.handle.Init.SrcInc = DMA_SINC_INCREMENTED;
+	dev_data->dma.handle.Init.DestInc = DMA_DINC_INCREMENTED;
+	dev_data->dma.handle.Init.SrcDataWidth = table_src_size[index];
+	dev_data->dma.handle.Init.DestDataWidth = table_dest_size[index];
+	dev_data->dma.handle.Init.Priority = table_priority[dev_data->dma.cfg.channel_priority];
+	dev_data->dma.handle.Init.SrcBurstLength = 64;
+	dev_data->dma.handle.Init.DestBurstLength = 64;
+	dev_data->dma.handle.Init.TransferAllocatedPort =
 		DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
-	data->dma.handle.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
-	data->dma.handle.Init.Mode = DMA_NORMAL;
-	data->dma.handle.Instance = STM32_DMA_GET_INSTANCE(data->dma.reg, data->dma.channel);
+	dev_data->dma.handle.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
+	dev_data->dma.handle.Init.Mode = DMA_NORMAL;
+	dev_data->dma.handle.Instance =
+		STM32_DMA_GET_INSTANCE(dev_data->dma.reg, dev_data->dma.channel);
 
-	if (HAL_DMA_Init(&data->dma.handle) != HAL_OK) {
+	if (HAL_DMA_Init(&dev_data->dma.handle) != HAL_OK) {
 		LOG_ERR("FMC NAND DMA Init failed");
 		return -EIO;
 	}
@@ -596,7 +618,8 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	for (size_t block_id = 0; block_id < block_count; block_id++) {
 		NAND_AddressTypeDef nand_addr =
 			flash_stm32_fmc_nand_calculate_address(dev, block_id * config->block_size);
-		ret = HAL_NAND_Read_SpareArea_8b(&data->nand, &nand_addr, config->page_buffer, 1);
+		ret = HAL_NAND_Read_SpareArea_8b(&dev_data->nand, &nand_addr, config->page_buffer,
+						 1);
 		if (ret != HAL_OK) {
 			LOG_ERR("HAL_NAND_Read_SpareArea_8b() failed with error %d", ret);
 			return -EIO;
@@ -634,7 +657,10 @@ static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 	.get_size = flash_stm32_fmc_nand_get_size,
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 	.page_layout = flash_stm32_fmc_nand_page_layout,
-#endif
+#endif /* CONFIG_FLASH_PAGE_LAYOUT */
+#ifdef CONFIG_FLASH_EX_OP_ENABLED
+	.ex_op = flash_stm32_fmc_nand_ex_op,
+#endif /* CONFIG_FLASH_EX_OP_ENABLED */
 };
 
 #if STM32_FMC_NAND_USE_DMA

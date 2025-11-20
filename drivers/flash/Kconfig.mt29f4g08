@@ -1,11 +1,22 @@
-# MT29F4G08 NAND Flash driver configuration options
+# MT29F4G08 NAND flash driver configuration options
 
 # Copyright (c) 2025 Endress+Hauser GmbH+Co. KG
 # SPDX-License-Identifier: Apache-2.0
 
-config FLASH_MT29F4G08
-	bool "MT29F4G08 NAND Flash driver"
+menuconfig FLASH_MT29F4G08
+	bool "MT29F4G08 NAND flash driver"
 	default y
     depends on DT_HAS_MICRON_MT29F4G08_ENABLED
+	select FLASH_EX_OP_ENABLED
 	help
 	  Enable flash memory specific support for Micron MT29F4G08.
+
+if FLASH_MT29F4G08
+
+config FLASH_MT29F4G08_ECC
+	bool "MT29F4G08 On-Die ECC"
+	default y
+	help
+	  Enable on-die ECC feature of Micron MT29F4G08.
+
+endif # FLASH_MT29F4G08
