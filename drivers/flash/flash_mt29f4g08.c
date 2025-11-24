@@ -10,6 +10,8 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/flash/nand_flash_api_ex.h>
 
+#include "flash_stm32_fmc_nand.h"
+
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(flash_mt29f4g08, CONFIG_FLASH_LOG_LEVEL);
 
@@ -18,7 +20,26 @@ LOG_MODULE_REGISTER(flash_mt29f4g08, CONFIG_FLASH_LOG_LEVEL);
 
 struct flash_mt29f4g08_config {
 	const struct device *controller;
+	size_t page_size;
+	size_t spare_area_size;
+	size_t block_size;
+	size_t plane_size;
+	size_t flash_size;
 };
+
+static struct nand_flash_address
+flash_mt29f4g08_calculate_address(const struct flash_mt29f4g08_config *config, off_t offset)
+{
+	off_t page_index = offset / config->page_size;
+	off_t block_index = offset / config->block_size;
+	off_t plane_index = offset / config->plane_size;
+
+	return (struct nand_flash_address){
+		.page = page_index % (config->block_size / config->page_size),
+		.block = block_index % (config->plane_size / config->block_size),
+		.plane = plane_index % (config->flash_size / config->plane_size),
+	};
+}
 
 static int flash_mt29f4g08_read(const struct device *dev, off_t offset, void *data, size_t len)
 {
@@ -45,10 +66,30 @@ static int flash_mt29f4g08_erase(const struct device *dev, off_t offset, size_t 
 {
 	const struct flash_mt29f4g08_config *config = dev->config;
 	const struct device *controller = config->controller;
-	const struct flash_driver_api *controller_api =
-		(const struct flash_driver_api *)controller->api;
 
-	return controller_api->erase(controller, offset, size);
+	if ((offset < 0) || (offset >= config->flash_size) ||
+	    (size > (config->flash_size - offset))) {
+		return -EINVAL;
+	}
+
+	if (((offset % config->block_size) != 0) || ((size % config->block_size) != 0)) {
+		return -EINVAL;
+	}
+
+	while (size > 0) {
+		struct nand_flash_address address =
+			flash_mt29f4g08_calculate_address(config, offset);
+		int ret = flash_stm32_fmc_nand_erase_block(controller, &address);
+		if (ret != 0) {
+			LOG_ERR("Erasing block at page %d, block %d, plane %d failed with error %d",
+				address.page, address.block, address.plane, ret);
+			return ret;
+		}
+		offset += config->block_size;
+		size -= config->block_size;
+	}
+
+	return 0;
 }
 
 static const struct flash_parameters *flash_mt29f4g08_get_parameters(const struct device *dev)
@@ -144,6 +185,11 @@ static DEVICE_API(flash, flash_mt29f4g08_api) = {
 #define FLASH_MT29F4G08_INIT(n)                                                                    \
 	static const struct flash_mt29f4g08_config flash_mt29f4g08_config_##n = {                  \
 		.controller = DEVICE_DT_GET(DT_PARENT(DT_DRV_INST(n))),                            \
+		.page_size = DT_PROP(DT_DRV_INST(n), page_size),                                   \
+		.spare_area_size = DT_PROP(DT_DRV_INST(n), spare_area_size),                       \
+		.block_size = DT_PROP(DT_DRV_INST(n), block_size),                                 \
+		.plane_size = DT_PROP(DT_DRV_INST(n), plane_size),                                 \
+		.flash_size = DT_PROP(DT_DRV_INST(n), flash_size),                                 \
 	};                                                                                         \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(n, flash_mt29f4g08_init, NULL, NULL, &flash_mt29f4g08_config_##n,    \

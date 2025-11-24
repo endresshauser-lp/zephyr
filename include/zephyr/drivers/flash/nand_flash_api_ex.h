@@ -16,6 +16,12 @@ enum nand_flash_ex_ops {
 	NAND_FLASH_SET_FEATURE,
 };
 
+struct nand_flash_address {
+	uint16_t page;
+	uint16_t block;
+	uint16_t plane;
+};
+
 struct nand_flash_feature {
 	uint8_t feature_addr;
 	uint8_t feature_data[4];

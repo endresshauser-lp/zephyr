@@ -15,3 +15,33 @@ include: base.yaml
 properties:
   reg:
     required: true
+
+  page_size:
+    type: int
+    required: true
+    description: |
+      NAND page size in bytes.
+
+  spare_area_size:
+    type: int
+    required: true
+    description: |
+      NAND spare area size in bytes.
+
+  block_size:
+    type: int
+    required: true
+    description: |
+      NAND block size in bytes. Must be a multiple of page_size.
+
+  plane_size:
+    type: int
+    required: true
+    description: |
+      NAND plane size in bytes. Must be a multiple of block_size.
+
+  flash_size:
+    type: int
+    required: true
+    description: |
+      Total NAND flash size in bytes. Must be a multiple of plane_size.

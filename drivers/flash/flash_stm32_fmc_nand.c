@@ -10,6 +10,8 @@
 #include <zephyr/drivers/flash/nand_flash_api_ex.h>
 #include <zephyr/drivers/memc/memc_stm32.h>
 
+#include "flash_stm32_fmc_nand.h"
+
 /* TODO: Does not work with multiple driver instances */
 #define STM32_FMC_NAND_USE_DMA DT_NODE_HAS_PROP(DT_DRV_INST(0), dmas)
 
@@ -302,14 +304,32 @@ static NAND_AddressTypeDef flash_stm32_fmc_nand_calculate_address(const struct d
 	return nand_addr;
 }
 
+int flash_stm32_fmc_nand_erase_block(const struct device *dev, const struct nand_flash_address *address)
+{
+	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
+	NAND_AddressTypeDef nand_addr = {
+		.Page = address->page,
+		.Plane = address->plane,
+		.Block = address->block,
+	};
+
+	int ret = HAL_NAND_Erase_Block(&dev_data->nand, &nand_addr);
+	if (ret != HAL_OK) {
+		LOG_ERR("HAL_NAND_Erase_Block() failed with error %d", ret);
+		return -EIO;
+	}
+
+	return 0;
+}
+
 static int flash_stm32_fmc_nand_erase(const struct device *dev, off_t offset, size_t size)
 {
 	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
 	const struct flash_stm32_fmc_nand_config *config = dev->config;
 
 	/* validate address and size */
-	if ((offset < 0) || (offset >= config->flash_size) || (size > config->flash_size) ||
-	    ((config->flash_size - offset) < size)) {
+	if ((offset < 0) || (offset >= config->flash_size) ||
+	    (size > (config->flash_size - offset))) {
 		return -EINVAL;
 	}
 
@@ -517,7 +537,7 @@ int flash_stm32_fmc_nand_ex_op(const struct device *dev, uint16_t code, const ui
 		break;
 	}
 
-	return ret;
+	return -ret;
 }
 #endif /* CONFIG_FLASH_EX_OP_ENABLED */
 
@@ -644,6 +664,7 @@ static void fmc_nand_dma_callback(const struct device *dev, void *user_data, uin
 }
 #endif /* STM32_FMC_NAND_USE_DMA */
 
+/* TODO: Remove flash API */
 static DEVICE_API(flash, flash_stm32_fmc_nand_api) = {
 	.read = flash_stm32_fmc_nand_read,
 	.write = flash_stm32_fmc_nand_write,
