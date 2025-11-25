@@ -12,8 +12,8 @@
 #include <zephyr/drivers/flash.h>
 
 enum nand_flash_ex_ops {
-	NAND_FLASH_CHECK_BLOCKS = FLASH_EX_OP_VENDOR_BASE,
-	NAND_FLASH_SET_FEATURE,
+	NAND_FLASH_IS_BAD_BLOCK = FLASH_EX_OP_VENDOR_BASE,
+	NAND_FLASH_MARK_BAD_BLOCK
 };
 
 struct nand_flash_address {

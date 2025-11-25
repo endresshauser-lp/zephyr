@@ -8,6 +8,9 @@ menuconfig FLASH_MT29F4G08
 	default y
     depends on DT_HAS_MICRON_MT29F4G08_ENABLED
 	select FLASH_EX_OP_ENABLED
+	select FLASH_HAS_DRIVER_ENABLED
+	select FLASH_HAS_EXPLICIT_ERASE
+	select FLASH_HAS_PAGE_LAYOUT
 	help
 	  Enable flash memory specific support for Micron MT29F4G08.
 

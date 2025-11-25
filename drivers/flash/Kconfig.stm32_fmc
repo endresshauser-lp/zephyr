@@ -1,4 +1,4 @@
-# STM32 FMC flash driver configuration options
+# STM32 flexible memory controller configuration options
 
 # Copyright (c) 2025 Endress+Hauser GmbH+Co. KG
 # SPDX-License-Identifier: Apache-2.0
@@ -6,15 +6,12 @@
 DT_STM32_FMC_NAND_HAS_DMA := $(dt_compat_any_has_prop,$(DT_COMPAT_ST_STM32_FMC_NAND),dmas)
 
 config FLASH_STM32_FMC_NAND
-	bool "STM32 FMC NAND flash driver"
+	bool "STM32 FMC NAND flash controller"
 	default y
 	depends on DT_HAS_ST_STM32_FMC_NAND_ENABLED
 	select MEMC
 	select USE_STM32_LL_FMC
 	select USE_STM32_HAL_NAND
-	select FLASH_HAS_DRIVER_ENABLED
-	select FLASH_HAS_EXPLICIT_ERASE
-	select FLASH_HAS_PAGE_LAYOUT
 	select DMA if $(DT_STM32_FMC_NAND_HAS_DMA)
 	select USE_STM32_HAL_DMA if $(DT_STM32_FMC_NAND_HAS_DMA)
 	help

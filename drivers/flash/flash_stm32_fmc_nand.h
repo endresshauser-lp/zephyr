@@ -9,7 +9,23 @@
 
 #include <zephyr/drivers/flash/nand_flash_api_ex.h>
 
+int flash_stm32_fmc_nand_read_page(const struct device *dev,
+				   const struct nand_flash_address *address, const uint8_t *data,
+				   off_t page_offset, size_t chunk);
+
+int flash_stm32_fmc_nand_read_spare_area(const struct device *dev,
+					 const struct nand_flash_address *address,
+					 uint8_t *data);
+
+int flash_stm32_fmc_nand_write_page(const struct device *dev,
+				    const struct nand_flash_address *address, const uint8_t *data);
+
 int flash_stm32_fmc_nand_erase_block(const struct device *dev,
 				     const struct nand_flash_address *address);
+
+int flash_stm32_fmc_nand_reset(const struct device *dev);
+
+int flash_stm32_fmc_nand_set_feature(const struct device *dev,
+				     const struct nand_flash_feature *feature);
 
 #endif /* __ZEPHYR_DRIVERS_FLASH_STM32_FMC_NAND_H__ */
