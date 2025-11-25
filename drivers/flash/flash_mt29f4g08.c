@@ -183,8 +183,22 @@ static int flash_mt29f4g08_init(const struct device *dev)
 		return -ENODEV;
 	}
 
+	/* Initialise NAND bank */
+	struct flash_stm32_fmc_nand_init init = {
+		.page_size = config->page_size,
+		.spare_area_size = config->spare_area_size,
+		.block_size = config->block_size,
+		.plane_size = config->plane_size,
+		.flash_size = config->flash_size,
+	};
+	int ret = flash_stm32_fmc_nand_init_bank(controller, &init);
+	if (ret != 0) {
+		LOG_ERR("NAND bank initialisation failed with error %d", ret);
+		return -EIO;
+	}
+
 	/* Reset NAND flash */
-	int ret = flash_stm32_fmc_nand_reset(controller);
+	ret = flash_stm32_fmc_nand_reset(controller);
 	if (ret != 0) {
 		LOG_ERR("NAND flash reset failed with error %d", ret);
 		return -EIO;
@@ -217,7 +231,7 @@ static int flash_mt29f4g08_init(const struct device *dev)
 		}
 	}
 
-	LOG_INF("MT29F4G08 flash initialized with controller %s", controller->name);
+	LOG_INF("MT29F4G08 flash initialised with controller %s", controller->name);
 
 	return 0;
 }
@@ -237,24 +251,24 @@ static DEVICE_API(flash, flash_mt29f4g08_api) = {
 #define LAYOUT_PAGES_PROP(n)                                                                       \
 	IF_ENABLED(CONFIG_FLASH_PAGE_LAYOUT,                                                       \
 		(.layout = {                                                                       \
-			.pages_count = DT_PROP(DT_DRV_INST(n), flash_size) /                       \
-				       DT_PROP(DT_DRV_INST(n), block_size),                        \
-			.pages_size = DT_PROP(DT_DRV_INST(n), block_size),                         \
+			.pages_count = DT_INST_PROP(n, flash_size) /                               \
+				       DT_INST_PROP(n, block_size),                                \
+			.pages_size = DT_INST_PROP(n, block_size),                                 \
 		}))
 
 #define FLASH_MT29F4G08_INIT(n)                                                                    \
 	static const struct flash_mt29f4g08_config flash_mt29f4g08_config_##n = {                  \
-		.controller = DEVICE_DT_GET(DT_PARENT(DT_DRV_INST(n))),                            \
+		.controller = DEVICE_DT_GET(DT_INST_PARENT(n)),                                    \
 		.parameters =                                                                      \
 			{                                                                          \
-				.write_block_size = DT_PROP(DT_DRV_INST(n), page_size),            \
+				.write_block_size = DT_INST_PROP(n, page_size),                    \
 				.erase_value = 0xff,                                               \
 			},                                                                         \
-		.page_size = DT_PROP(DT_DRV_INST(n), page_size),                                   \
-		.spare_area_size = DT_PROP(DT_DRV_INST(n), spare_area_size),                       \
-		.block_size = DT_PROP(DT_DRV_INST(n), block_size),                                 \
-		.plane_size = DT_PROP(DT_DRV_INST(n), plane_size),                                 \
-		.flash_size = DT_PROP(DT_DRV_INST(n), flash_size),                                 \
+		.page_size = DT_INST_PROP(n, page_size),                                           \
+		.spare_area_size = DT_INST_PROP(n, spare_area_size),                               \
+		.block_size = DT_INST_PROP(n, block_size),                                         \
+		.plane_size = DT_INST_PROP(n, plane_size),                                         \
+		.flash_size = DT_INST_PROP(n, flash_size),                                         \
 		LAYOUT_PAGES_PROP(n),                                                              \
 	};                                                                                         \
                                                                                                    \

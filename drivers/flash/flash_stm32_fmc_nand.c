@@ -12,8 +12,8 @@
 
 #include "flash_stm32_fmc_nand.h"
 
-/* TODO: Does not work with multiple driver instances */
-#define STM32_FMC_NAND_USE_DMA DT_NODE_HAS_PROP(DT_DRV_INST(0), dmas)
+/* TODO: Additionally introduce boolean configuration parameter for each driver instance */
+#define STM32_FMC_NAND_USE_DMA DT_ANY_INST_HAS_PROP_STATUS_OKAY(dmas)
 
 #if STM32_FMC_NAND_USE_DMA
 #include <zephyr/drivers/dma.h>
@@ -58,12 +58,7 @@ struct stream {
 #endif /* STM32_FMC_NAND_USE_DMA */
 
 struct flash_stm32_fmc_nand_config {
-	size_t page_size;
-	size_t spare_area_size;
-	size_t block_size;
-	size_t plane_size;
-	size_t flash_size;
-	unsigned char *page_buffer;
+	uint8_t *page_buffer;
 };
 
 struct flash_stm32_fmc_nand_data {
@@ -282,7 +277,7 @@ static HAL_StatusTypeDef flash_stm32_fmc_nand_read_page2(NAND_HandleTypeDef *hna
 	return HAL_OK;
 }
 
-/* TODO: Try to remove page_offset and chunk function parameters */
+/* TODO: Try to remove page_offset and chunk function parameters or rename function */
 int flash_stm32_fmc_nand_read_page(const struct device *dev,
 				   const struct nand_flash_address *address, const uint8_t *data,
 				   off_t page_offset, size_t chunk)
@@ -358,14 +353,14 @@ int flash_stm32_fmc_nand_write_page(const struct device *dev,
 
 #if STM32_FMC_NAND_USE_DMA
 	ret = dma_reload(dev_data->dma.dev, dev_data->dma.channel, (uint32_t)data,
-			 (uint32_t)config->page_buffer, config->page_size);
+			 (uint32_t)config->page_buffer, dev_data->nand.Config.PageSize);
 	if (ret != 0) {
 		LOG_ERR("Failed to reload DMA transfer on channel %d with error %d",
 			dev_data->dma.channel, ret);
 		return -EIO;
 	}
 #else
-	memcpy(config->page_buffer, data, config->page_size);
+	memcpy(config->page_buffer, data, dev_data->nand.Config.PageSize);
 #endif /* STM32_FMC_NAND_USE_DMA */
 
 	ret = HAL_NAND_Write_Page_8b(&dev_data->nand, &nand_addr, config->page_buffer, 1);
@@ -396,6 +391,54 @@ int flash_stm32_fmc_nand_erase_block(const struct device *dev,
 	return 0;
 }
 
+int flash_stm32_fmc_nand_init_bank(const struct device *dev, const struct flash_stm32_fmc_nand_init *init)
+{
+	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
+	int ret;
+
+	dev_data->nand.Instance = FMC_NAND_DEVICE;
+
+	dev_data->nand.Init.NandBank = FMC_NAND_BANK3;
+	dev_data->nand.Init.Waitfeature = FMC_NAND_WAIT_FEATURE_ENABLE;
+	dev_data->nand.Init.MemoryDataWidth = FMC_NAND_MEM_BUS_WIDTH_8;
+	dev_data->nand.Init.EccComputation = FMC_NAND_ECC_DISABLE;
+	dev_data->nand.Init.ECCPageSize = FMC_NAND_ECC_PAGE_SIZE_2048BYTE;
+	dev_data->nand.Init.TCLRSetupTime = 0;
+	dev_data->nand.Init.TARSetupTime = 0;
+
+	dev_data->nand.Config.PageSize = (uint32_t)init->page_size;
+	dev_data->nand.Config.SpareAreaSize = (uint32_t)init->spare_area_size;
+	dev_data->nand.Config.BlockSize = (uint32_t)(init->block_size / init->page_size);
+	dev_data->nand.Config.BlockNbr = (uint32_t)(init->flash_size / init->block_size);
+	dev_data->nand.Config.PlaneNbr = (uint32_t)(init->flash_size / init->plane_size);
+	dev_data->nand.Config.PlaneSize = (uint32_t)(init->plane_size / init->block_size);
+	dev_data->nand.Config.ExtraCommandEnable = DISABLE;
+
+	FMC_NAND_PCC_TimingTypeDef com_space_timing = {
+		.SetupTime = 0, .WaitSetupTime = 2, .HoldSetupTime = 1, .HiZSetupTime = 0};
+
+	FMC_NAND_PCC_TimingTypeDef att_space_timing = {
+		.SetupTime = 0, .WaitSetupTime = 2, .HoldSetupTime = 1, .HiZSetupTime = 0};
+
+	ret = HAL_NAND_Init(&dev_data->nand, &com_space_timing, &att_space_timing);
+	if (ret != HAL_OK) {
+		LOG_ERR("HAL_NAND_Init() failed with error %d", ret);
+		return -EIO;
+	}
+
+	NAND_IDTypeDef nand_id = {0};
+	ret = HAL_NAND_Read_ID(&dev_data->nand, &nand_id);
+	if (ret != HAL_OK) {
+		LOG_ERR("HAL_NAND_Read_ID() failed with error %d", ret);
+		return -EIO;
+	}
+
+	LOG_INF("Flash found! ID: %02X %02X %02X %02X", nand_id.Maker_Id, nand_id.Device_Id,
+		nand_id.Third_Id, nand_id.Fourth_Id);
+
+	return 0;
+}
+
 int flash_stm32_fmc_nand_reset(const struct device *dev)
 {
 	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
@@ -419,52 +462,9 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
 	const struct flash_stm32_fmc_nand_config *config = dev->config;
 
-	/* TODO: Remove this and according Kconfig/header */
 	uint32_t fmc_freq;
 	memc_stm32_fmc_clock_rate(&fmc_freq);
 	LOG_DBG("FMC clock rate: %d Hz", fmc_freq);
-
-	dev_data->nand.Instance = FMC_NAND_DEVICE;
-
-	dev_data->nand.Init.NandBank = FMC_NAND_BANK3;
-	dev_data->nand.Init.Waitfeature = FMC_NAND_WAIT_FEATURE_ENABLE;
-	dev_data->nand.Init.MemoryDataWidth = FMC_NAND_MEM_BUS_WIDTH_8;
-	dev_data->nand.Init.EccComputation = FMC_NAND_ECC_DISABLE;
-	dev_data->nand.Init.ECCPageSize = FMC_NAND_ECC_PAGE_SIZE_2048BYTE;
-	dev_data->nand.Init.TCLRSetupTime = 0;
-	dev_data->nand.Init.TARSetupTime = 0;
-
-	dev_data->nand.Config.PageSize = (uint32_t)config->page_size;
-	dev_data->nand.Config.SpareAreaSize = (uint32_t)config->spare_area_size;
-	dev_data->nand.Config.BlockSize = (uint32_t)(config->block_size / config->page_size);
-	dev_data->nand.Config.BlockNbr = (uint32_t)(config->flash_size / config->block_size);
-	dev_data->nand.Config.PlaneNbr = (uint32_t)(config->flash_size / config->plane_size);
-	dev_data->nand.Config.PlaneSize = (uint32_t)(config->plane_size / config->block_size);
-	dev_data->nand.Config.ExtraCommandEnable = DISABLE;
-
-	FMC_NAND_PCC_TimingTypeDef com_space_timing = {
-		.SetupTime = 0, .WaitSetupTime = 2, .HoldSetupTime = 1, .HiZSetupTime = 0};
-
-	FMC_NAND_PCC_TimingTypeDef att_space_timing = {
-		.SetupTime = 0, .WaitSetupTime = 2, .HoldSetupTime = 1, .HiZSetupTime = 0};
-
-	int ret;
-
-	ret = HAL_NAND_Init(&dev_data->nand, &com_space_timing, &att_space_timing);
-	if (ret != HAL_OK) {
-		LOG_ERR("HAL_NAND_Init() failed with error %d", ret);
-		return -EIO;
-	}
-
-	NAND_IDTypeDef nand_id = {0};
-	ret = HAL_NAND_Read_ID(&dev_data->nand, &nand_id);
-	if (ret != HAL_OK) {
-		LOG_ERR("HAL_NAND_Read_ID() failed with error %d", ret);
-		return -EIO;
-	}
-
-	LOG_INF("Flash found! ID: %02X %02X %02X %02X", nand_id.Maker_Id, nand_id.Device_Id,
-		nand_id.Third_Id, nand_id.Fourth_Id);
 
 #if STM32_FMC_NAND_USE_DMA
 	/*
@@ -485,7 +485,7 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 
 	dev_data->dma.cfg.head_block = &dev_data->dma.block_cfg;
 
-	ret = dma_config(dev_data->dma.dev, dev_data->dma.channel, &dev_data->dma.cfg);
+	int ret = dma_config(dev_data->dma.dev, dev_data->dma.channel, &dev_data->dma.cfg);
 	if (ret != 0) {
 		LOG_ERR("Failed to configure DMA channel %d with error %d", dev_data->dma.channel,
 			ret);
@@ -566,15 +566,10 @@ static void fmc_nand_dma_callback(const struct device *dev, void *user_data, uin
 #endif /* STM32_FMC_NAND_USE_DMA */
 
 #define FLASH_STM32_FMC_NAND_INIT(n)                                                               \
-	static unsigned char __nocache __aligned(PAGE_BUFFER_ALIGNMENT)                            \
-	flash_stm32_fmc_nand_page_buffer_##n[DT_PROP(DT_DRV_INST(n), page_size)];                  \
+	static uint8_t __nocache __aligned(PAGE_BUFFER_ALIGNMENT)                                  \
+	flash_stm32_fmc_nand_page_buffer_##n[DT_INST_PROP(n, page_buffer_size)];                   \
                                                                                                    \
 	static const struct flash_stm32_fmc_nand_config flash_stm32_fmc_nand_config_##n = {        \
-		.page_size = DT_PROP(DT_DRV_INST(n), page_size),                                   \
-		.spare_area_size = DT_PROP(DT_DRV_INST(n), spare_area_size),                       \
-		.block_size = DT_PROP(DT_DRV_INST(n), block_size),                                 \
-		.plane_size = DT_PROP(DT_DRV_INST(n), plane_size),                                 \
-		.flash_size = DT_PROP(DT_DRV_INST(n), flash_size),                                 \
 		.page_buffer = flash_stm32_fmc_nand_page_buffer_##n,                               \
 	};                                                                                         \
                                                                                                    \

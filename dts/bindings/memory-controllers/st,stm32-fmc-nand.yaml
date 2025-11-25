@@ -33,11 +33,21 @@ description: |
       #address-cells = <1>;
       #size-cells = <0>;
 
+      page_buffer_size = <DT_SIZE_K(2)>;
+
       dmas = <&dma1 2 0 0x0000>;
       dma-names = "tx_rx";
 
       nand-flash@3 {
-        reg = <0x3>;
+        compatible = "micron,mt29f4g08";
+        status = "okay";
+        reg = <3>;
+
+        page_size = <DT_SIZE_K(2)>;
+        spare_area_size = <64>;
+        block_size = <DT_SIZE_K(128)>;
+        plane_size = <DT_SIZE_M(256)>;
+        flash_size = <DT_SIZE_M(512)>;
       };
     };
   };
@@ -55,35 +65,11 @@ properties:
     required: true
     const: 0
 
-  page_size:
+  page_buffer_size:
     type: int
     required: true
     description: |
-      NAND page size in bytes.
-
-  spare_area_size:
-    type: int
-    required: true
-    description: |
-      NAND spare area size in bytes.
-
-  block_size:
-    type: int
-    required: true
-    description: |
-      NAND block size in bytes. Must be a multiple of page_size.
-
-  plane_size:
-    type: int
-    required: true
-    description: |
-      NAND plane size in bytes. Must be a multiple of block_size.
-
-  flash_size:
-    type: int
-    required: true
-    description: |
-      Total NAND flash size in bytes. Must be a multiple of plane_size.
+      Page buffer size in bytes. Must be equal to the largest NAND page size among the child nodes.
 
 child-binding:
   description: NAND bank.
@@ -95,3 +81,33 @@ child-binding:
       description: |
         NAND bank value. Used to chip select the bank to which the flash memory is connected.
         Should be equal to a value of FMC_NAND_BANKx.
+
+    page_size:
+      type: int
+      required: true
+      description: |
+        NAND page size in bytes.
+
+    spare_area_size:
+      type: int
+      required: true
+      description: |
+        NAND spare area size in bytes.
+
+    block_size:
+      type: int
+      required: true
+      description: |
+        NAND block size in bytes. Must be a multiple of page_size.
+
+    plane_size:
+      type: int
+      required: true
+      description: |
+        NAND plane size in bytes. Must be a multiple of block_size.
+
+    flash_size:
+      type: int
+      required: true
+      description: |
+        Total NAND flash size in bytes. Must be a multiple of plane_size.
