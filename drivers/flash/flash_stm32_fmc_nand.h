@@ -10,6 +10,7 @@
 #include <zephyr/drivers/flash/nand_flash_api_ex.h>
 
 struct flash_stm32_fmc_nand_init {
+	uint8_t bank;
 	size_t page_size;
 	size_t spare_area_size;
 	size_t block_size;

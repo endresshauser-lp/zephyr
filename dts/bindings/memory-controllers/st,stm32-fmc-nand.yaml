@@ -65,7 +65,7 @@ properties:
     required: true
     const: 0
 
-  page_buffer_size:
+  page-buffer-size:
     type: int
     required: true
     description: |
@@ -82,32 +82,32 @@ child-binding:
         NAND bank value. Used to chip select the bank to which the flash memory is connected.
         Should be equal to a value of FMC_NAND_BANKx.
 
-    page_size:
+    page-size:
       type: int
       required: true
       description: |
         NAND page size in bytes.
 
-    spare_area_size:
+    spare-area-size:
       type: int
       required: true
       description: |
         NAND spare area size in bytes.
 
-    block_size:
+    block-size:
       type: int
       required: true
       description: |
-        NAND block size in bytes. Must be a multiple of page_size.
+        NAND block size in bytes. Must be a multiple of page size.
 
-    plane_size:
+    plane-size:
       type: int
       required: true
       description: |
-        NAND plane size in bytes. Must be a multiple of block_size.
+        NAND plane size in bytes. Must be a multiple of block size.
 
-    flash_size:
+    flash-size:
       type: int
       required: true
       description: |
-        Total NAND flash size in bytes. Must be a multiple of plane_size.
+        Total NAND flash size in bytes. Must be a multiple of plane size.

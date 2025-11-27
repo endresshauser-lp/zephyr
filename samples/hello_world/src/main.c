@@ -24,8 +24,10 @@ int main(void)
 	printf("* Erase bank 1 (128k): flash erase nand 20000\n");
 	printf("\n");
 	printf(" == Write == \n");
-	printf("* Write first page (2k) with increasing pattern 00 01 02 ...: flash write_test nand 0 2048 1\n");
-	printf("* Write second page (2k) with increasing pattern 00 01 02 ...: flash write_test nand 800 2048 1\n");
+	printf("* Write first page (2k) with increasing pattern 00 01 02 ...: flash write_test "
+	       "nand 0 2048 1\n");
+	printf("* Write second page (2k) with increasing pattern 00 01 02 ...: flash write_test "
+	       "nand 800 2048 1\n");
 	printf("\n");
 	printf(" == Erase + Write == \n");
 	printf("* Erase and write bank 0 once: flash erase_write_test nand 0 131072 1\n");

@@ -15,22 +15,22 @@ properties:
     type: int
     required: true
 
-  page_size:
+  page-size:
     type: int
     required: true
 
-  spare_area_size:
+  spare-area-size:
     type: int
     required: true
 
-  block_size:
+  block-size:
     type: int
     required: true
 
-  plane_size:
+  plane-size:
     type: int
     required: true
 
-  flash_size:
+  flash-size:
     type: int
     required: true

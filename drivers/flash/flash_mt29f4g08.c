@@ -21,6 +21,7 @@ LOG_MODULE_REGISTER(flash_mt29f4g08, CONFIG_FLASH_LOG_LEVEL);
 struct flash_mt29f4g08_config {
 	const struct device *controller;
 	struct flash_parameters parameters;
+	uint8_t bank;
 	size_t page_size;
 	size_t spare_area_size;
 	size_t block_size;
@@ -119,6 +120,7 @@ static int flash_mt29f4g08_erase(const struct device *dev, off_t offset, size_t 
 {
 	const struct flash_mt29f4g08_config *config = dev->config;
 	const struct device *controller = config->controller;
+	int ret;
 
 	if ((offset < 0) || (offset >= config->flash_size) ||
 	    (size > (config->flash_size - offset))) {
@@ -132,7 +134,8 @@ static int flash_mt29f4g08_erase(const struct device *dev, off_t offset, size_t 
 	while (size > 0) {
 		struct nand_flash_address address =
 			flash_mt29f4g08_calculate_address(config, offset);
-		int ret = flash_stm32_fmc_nand_erase_block(controller, &address);
+
+		ret = flash_stm32_fmc_nand_erase_block(controller, &address);
 		if (ret != 0) {
 			LOG_ERR("Erasing block %d at plane %d failed with error %d", address.block,
 				address.plane, ret);
@@ -177,21 +180,24 @@ static int flash_mt29f4g08_init(const struct device *dev)
 {
 	const struct flash_mt29f4g08_config *config = dev->config;
 	const struct device *controller = config->controller;
+	int ret;
 
 	if (!device_is_ready(controller)) {
 		LOG_ERR("Parent flash controller %s is not ready", controller->name);
 		return -ENODEV;
 	}
 
-	/* Initialise NAND bank */
 	struct flash_stm32_fmc_nand_init init = {
+		.bank = config->bank,
 		.page_size = config->page_size,
 		.spare_area_size = config->spare_area_size,
 		.block_size = config->block_size,
 		.plane_size = config->plane_size,
 		.flash_size = config->flash_size,
 	};
-	int ret = flash_stm32_fmc_nand_init_bank(controller, &init);
+
+	/* Initialise NAND bank */
+	ret = flash_stm32_fmc_nand_init_bank(controller, &init);
 	if (ret != 0) {
 		LOG_ERR("NAND bank initialisation failed with error %d", ret);
 		return -EIO;
@@ -264,6 +270,7 @@ static DEVICE_API(flash, flash_mt29f4g08_api) = {
 				.write_block_size = DT_INST_PROP(n, page_size),                    \
 				.erase_value = 0xff,                                               \
 			},                                                                         \
+		.bank = DT_INST_PROP(n, reg),                                                      \
 		.page_size = DT_INST_PROP(n, page_size),                                           \
 		.spare_area_size = DT_INST_PROP(n, spare_area_size),                               \
 		.block_size = DT_INST_PROP(n, block_size),                                         \

@@ -92,7 +92,7 @@ struct flash_stm32_fmc_nand_data {
 };
 
 /* Reads status until NAND is ready or reports an error */
-static int flash_stm32_fmc_nand_wait()
+static int flash_stm32_fmc_nand_wait(void)
 {
 	uint32_t start_time = k_uptime_get();
 	uint32_t status;
@@ -492,7 +492,15 @@ int flash_stm32_fmc_nand_init_bank(const struct device *dev,
 
 	dev_data->instance = FMC_NAND_DEVICE;
 
-	dev_data->init.NandBank = FMC_NAND_BANK3;
+	switch (init->bank) {
+	case 3:
+		dev_data->init.NandBank = FMC_NAND_BANK3;
+		break;
+	default:
+		LOG_ERR("Unsupported FMC NAND bank %d", init->bank);
+		return -EINVAL;
+	}
+
 	dev_data->init.Waitfeature = FMC_NAND_WAIT_FEATURE_ENABLE;
 	dev_data->init.MemoryDataWidth = FMC_NAND_MEM_BUS_WIDTH_8;
 	dev_data->init.EccComputation = FMC_NAND_ECC_DISABLE;
@@ -589,10 +597,10 @@ int flash_stm32_fmc_nand_set_feature(const struct device *dev,
 static int flash_stm32_fmc_nand_init(const struct device *dev)
 {
 	struct flash_stm32_fmc_nand_data *dev_data = dev->data;
+	uint32_t fmc_freq;
 
 	dev_data->state = NAND_STATE_RESET;
 
-	uint32_t fmc_freq;
 	memc_stm32_fmc_clock_rate(&fmc_freq);
 	LOG_DBG("FMC clock rate: %d Hz", fmc_freq);
 
