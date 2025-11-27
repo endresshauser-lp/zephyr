@@ -136,62 +136,44 @@ int flash_stm32_fmc_nand_read_page_chunk(const struct device *dev,
 
 	/* Send read page command sequence */
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_AREA_A;
-	__DSB();
 
 	if (dev_data->page_size <= 512) {
 		if (dev_data->total_pages <= 65535) {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 		} else {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_3RD_CYCLE(nand_address);
-			__DSB();
 		}
 	} else {
 		if (dev_data->total_pages <= 65535) {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 		} else {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_3RD_CYCLE(nand_address);
-			__DSB();
 		}
 	}
 
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_AREA_TRUE1;
-	__DSB();
 
 	/* Read status until NAND is ready or reports an error */
 	ret = flash_stm32_fmc_nand_wait();
@@ -207,7 +189,6 @@ int flash_stm32_fmc_nand_read_page_chunk(const struct device *dev,
 
 	/* Go back to read mode */
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_AREA_A;
-	__DSB();
 
 #if STM32_FMC_NAND_USE_DMA
 	/* Get page data into buffer */
@@ -264,68 +245,49 @@ int flash_stm32_fmc_nand_read_spare_area(const struct device *dev,
 	/* Send read spare area command sequence */
 	if (dev_data->page_size <= 512) {
 		*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_AREA_C;
-		__DSB();
 
 		if (dev_data->total_pages <= 65535) {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 		} else {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_3RD_CYCLE(nand_address);
-			__DSB();
 		}
 	} else {
 		*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_AREA_A;
-		__DSB();
 
 		if (dev_data->total_pages <= 65535) {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				COLUMN_1ST_CYCLE(column_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				COLUMN_2ND_CYCLE(column_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 		} else {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				COLUMN_1ST_CYCLE(column_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				COLUMN_2ND_CYCLE(column_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_3RD_CYCLE(nand_address);
-			__DSB();
 		}
 	}
 
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_AREA_TRUE1;
-	__DSB();
 
 	/* Read status until NAND is ready or reports an error */
 	ret = flash_stm32_fmc_nand_wait();
@@ -341,7 +303,6 @@ int flash_stm32_fmc_nand_read_spare_area(const struct device *dev,
 
 	/* Go back to read mode */
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_AREA_A;
-	__DSB();
 
 	/* Get spare area data into output buffer */
 	for (size_t index = 0; index < dev_data->spare_area_size; index++) {
@@ -373,59 +334,41 @@ int flash_stm32_fmc_nand_write_page(const struct device *dev,
 
 	/* Send write page command sequence */
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_AREA_A;
-	__DSB();
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_WRITE0;
-	__DSB();
 
 	if (dev_data->page_size <= 512) {
 		if (dev_data->total_pages <= 65535) {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 		} else {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_3RD_CYCLE(nand_address);
-			__DSB();
 		}
 	} else {
 		if (dev_data->total_pages <= 65535) {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 		} else {
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = 0x00;
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_1ST_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_2ND_CYCLE(nand_address);
-			__DSB();
 			*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) =
 				ADDR_3RD_CYCLE(nand_address);
-			__DSB();
 		}
 	}
 
@@ -433,11 +376,9 @@ int flash_stm32_fmc_nand_write_page(const struct device *dev,
 	for (size_t index = 0; index < dev_data->page_size; index++) {
 		*(__IO uint8_t *)NAND_DEVICE = *buffer;
 		buffer++;
-		__DSB();
 	}
 
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_WRITE_TRUE1;
-	__DSB();
 
 	/* Read status until NAND is ready or reports an error */
 	ret = flash_stm32_fmc_nand_wait();
@@ -468,17 +409,12 @@ int flash_stm32_fmc_nand_erase_block(const struct device *dev,
 
 	/* Send erase block command sequence */
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_ERASE0;
-	__DSB();
 
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = ADDR_1ST_CYCLE(nand_address);
-	__DSB();
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = ADDR_2ND_CYCLE(nand_address);
-	__DSB();
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = ADDR_3RD_CYCLE(nand_address);
-	__DSB();
 
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_ERASE1;
-	__DSB();
 
 	dev_data->state = NAND_STATE_READY;
 
@@ -570,17 +506,11 @@ int flash_stm32_fmc_nand_set_feature(const struct device *dev,
 
 	/* Send feature setting command sequence */
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | CMD_AREA)) = NAND_CMD_SET_FEATURES;
-	__DSB();
 	*(__IO uint8_t *)((uint32_t)(NAND_DEVICE | ADDR_AREA)) = feature->feature_addr;
-	__DSB();
 	*(__IO uint8_t *)NAND_DEVICE = feature->feature_data[0];
-	__DSB();
 	*(__IO uint8_t *)NAND_DEVICE = feature->feature_data[1];
-	__DSB();
 	*(__IO uint8_t *)NAND_DEVICE = feature->feature_data[2];
-	__DSB();
 	*(__IO uint8_t *)NAND_DEVICE = feature->feature_data[3];
-	__DSB();
 
 	/* Read status until NAND is ready or reports an error */
 	ret = flash_stm32_fmc_nand_wait();
