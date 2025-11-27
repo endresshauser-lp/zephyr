@@ -55,7 +55,7 @@ static int flash_mt29f4g08_read(const struct device *dev, off_t offset, void *da
 		return -EINVAL;
 	}
 
-	/* TODO: Do not allow partial page reads? */
+	/* TODO: Do not allow partial page reads or implement a faster way for entire page reads */
 	if (((offset % config->page_size) != 0) || ((len % config->page_size) != 0)) {
 		LOG_DBG("Partial page read");
 	}
@@ -67,10 +67,10 @@ static int flash_mt29f4g08_read(const struct device *dev, off_t offset, void *da
 				       : (config->page_size - page_offset);
 		struct nand_flash_address address =
 			flash_mt29f4g08_calculate_address(config, offset);
-		int ret = flash_stm32_fmc_nand_read_page(controller, &address,
-							 (const uint8_t *)data, page_offset, chunk);
+		int ret = flash_stm32_fmc_nand_read_page_chunk(controller, &address, page_offset,
+							       chunk, (uint8_t *)data);
 		if (ret != 0) {
-			LOG_ERR("Reading page at page %d, block %d, plane %d failed with error %d",
+			LOG_ERR("Reading page %d at block %d/plane %d failed with error %d",
 				address.page, address.block, address.plane, ret);
 			return ret;
 		}
@@ -103,7 +103,7 @@ static int flash_mt29f4g08_write(const struct device *dev, off_t offset, const v
 		int ret = flash_stm32_fmc_nand_write_page(controller, &address,
 							  (const uint8_t *)data);
 		if (ret != 0) {
-			LOG_ERR("Writing page at page %d, block %d, plane %d failed with error %d",
+			LOG_ERR("Writing page %d at block %d/plane %d failed with error %d",
 				address.page, address.block, address.plane, ret);
 			return ret;
 		}
@@ -134,8 +134,8 @@ static int flash_mt29f4g08_erase(const struct device *dev, off_t offset, size_t 
 			flash_mt29f4g08_calculate_address(config, offset);
 		int ret = flash_stm32_fmc_nand_erase_block(controller, &address);
 		if (ret != 0) {
-			LOG_ERR("Erasing block at page %d, block %d, plane %d failed with error %d",
-				address.page, address.block, address.plane, ret);
+			LOG_ERR("Erasing block %d at plane %d failed with error %d", address.block,
+				address.plane, ret);
 			return ret;
 		}
 		offset += config->block_size;

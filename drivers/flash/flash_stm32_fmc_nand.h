@@ -17,9 +17,9 @@ struct flash_stm32_fmc_nand_init {
 	size_t flash_size;
 };
 
-int flash_stm32_fmc_nand_read_page(const struct device *dev,
-				   const struct nand_flash_address *address, const uint8_t *data,
-				   off_t page_offset, size_t chunk);
+int flash_stm32_fmc_nand_read_page_chunk(const struct device *dev,
+					 const struct nand_flash_address *address,
+					 off_t page_offset, size_t chunk, uint8_t *data);
 
 int flash_stm32_fmc_nand_read_spare_area(const struct device *dev,
 					 const struct nand_flash_address *address, uint8_t *data);
