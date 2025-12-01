@@ -1,0 +1,16 @@
+# Copyright (c) 2025 Analog Devices, Inc.
+# Copyright (c) 2025 Endress+Hauser AG
+# SPDX-License-Identifier: Apache-2.0
+
+description: ADM682X Watchdog
+
+compatible: "adi,adm682x-watchdog"
+
+include: base.yaml
+
+properties:
+  wdi-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      The GPIO pin used to feed the watchdog.

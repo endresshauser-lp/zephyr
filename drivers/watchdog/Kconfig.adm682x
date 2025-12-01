@@ -1,0 +1,11 @@
+# Copyright (c) 2025 Analog Devices, Inc.
+# Copyright (c) 2025 Endress+Hauser AG
+# SPDX-License-Identifier: Apache-2.0
+
+config WDT_ADM682X
+	bool "Driver for the ADM682X watchdog family."
+	default y
+	depends on DT_HAS_ADI_ADM682_WATCHDOG_ENABLED
+	select HAS_WDT_DISABLE_AT_BOOT
+	help
+	  Enable support for external ADM682X family watchdog.
