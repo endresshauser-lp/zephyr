@@ -27,6 +27,10 @@ struct flash_mt29f4g08_config {
 	size_t block_size;
 	size_t plane_size;
 	size_t flash_size;
+	uint8_t setup_time;
+	uint8_t wait_setup_time;
+	uint8_t hold_setup_time;
+	uint8_t hiz_setup_time;
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 	struct flash_pages_layout layout;
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
@@ -54,11 +58,6 @@ static int flash_mt29f4g08_read(const struct device *dev, off_t offset, void *da
 	if ((offset < 0) || (offset >= config->flash_size) ||
 	    (len > (config->flash_size - offset))) {
 		return -EINVAL;
-	}
-
-	/* TODO: Do not allow partial page reads or implement a faster way for entire page reads */
-	if (((offset % config->page_size) != 0) || ((len % config->page_size) != 0)) {
-		LOG_DBG("Partial page read");
 	}
 
 	while (len > 0) {
@@ -176,6 +175,61 @@ static void flash_mt29f4g08_page_layout(const struct device *dev,
 }
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
+#if CONFIG_FLASH_EX_OP_ENABLED
+int flash_mt29f4g08_ex_op(const struct device *dev, uint16_t code, const uintptr_t in, void *out)
+{
+	const struct flash_mt29f4g08_config *config = dev->config;
+	int ret = 0;
+
+	switch (code) {
+	case NAND_FLASH_IS_BAD_BLOCK: {
+		/* Check bad block in first page */
+		size_t block = *(size_t *)in;
+		struct nand_flash_address address;
+		uint8_t spare_area[config->spare_area_size];
+
+		if (block * config->block_size >= config->flash_size) {
+			*(int *)out = 1;
+			return -EINVAL;
+		}
+
+		address = flash_mt29f4g08_calculate_address(config, block * config->block_size);
+		ret = flash_stm32_fmc_nand_read_spare_area(config->controller, &address,
+							   spare_area);
+		*(int *)out = ((ret == 0) && (spare_area[0] != 0xFF)) ? 1 : 0;
+		break;
+	}
+
+	case NAND_FLASH_MARK_BAD_BLOCK: {
+		/* Mark bad block in first page */
+		size_t block = *(size_t *)in;
+		struct nand_flash_address address;
+		uint8_t spare_area[config->spare_area_size];
+
+		if (block * config->block_size >= config->flash_size) {
+			return -EINVAL;
+		}
+
+		address = flash_mt29f4g08_calculate_address(config, block * config->block_size);
+		ret = flash_stm32_fmc_nand_read_spare_area(config->controller, &address,
+							   spare_area);
+		if (ret == 0) {
+			spare_area[0] = 0x00;
+			ret = flash_stm32_fmc_nand_write_spare_area(config->controller, &address,
+								    spare_area);
+		}
+		break;
+	}
+
+	default:
+		ret = -ENOTSUP;
+		break;
+	}
+
+	return ret;
+}
+#endif /* CONFIG_FLASH_EX_OP_ENABLED */
+
 static int flash_mt29f4g08_init(const struct device *dev)
 {
 	const struct flash_mt29f4g08_config *config = dev->config;
@@ -194,6 +248,10 @@ static int flash_mt29f4g08_init(const struct device *dev)
 		.block_size = config->block_size,
 		.plane_size = config->plane_size,
 		.flash_size = config->flash_size,
+		.setup_time = config->setup_time,
+		.wait_setup_time = config->wait_setup_time,
+		.hold_setup_time = config->hold_setup_time,
+		.hiz_setup_time = config->hiz_setup_time,
 	};
 
 	/* Initialise NAND bank */
@@ -223,20 +281,6 @@ static int flash_mt29f4g08_init(const struct device *dev)
 	}
 #endif /* CONFIG_FLASH_MT29F4G08_ECC */
 
-	/* Check initial bad blocks in first page of each */
-	const size_t block_count = config->flash_size / config->block_size;
-
-	for (size_t block_id = 0; block_id < block_count; block_id++) {
-		uint8_t spare_area[config->spare_area_size];
-		struct nand_flash_address address =
-			flash_mt29f4g08_calculate_address(config, block_id * config->block_size);
-		ret = flash_stm32_fmc_nand_read_spare_area(controller, &address, spare_area);
-		if ((ret == 0) && (spare_area[0] != 0xFF)) {
-			LOG_WRN("Block %zu is bad!", block_id);
-			LOG_HEXDUMP_INF(spare_area, config->spare_area_size, "Spare area data:");
-		}
-	}
-
 	LOG_INF("MT29F4G08 flash initialised with controller %s", controller->name);
 
 	return 0;
@@ -251,6 +295,9 @@ static DEVICE_API(flash, flash_mt29f4g08_api) = {
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 	.page_layout = flash_mt29f4g08_page_layout,
 #endif
+#ifdef CONFIG_FLASH_EX_OP_ENABLED
+	.ex_op = flash_mt29f4g08_ex_op,
+#endif /* CONFIG_FLASH_EX_OP_ENABLED */
 };
 
 /* A page in this context corresponds to the smallest erasable area which is a block */
@@ -276,6 +323,10 @@ static DEVICE_API(flash, flash_mt29f4g08_api) = {
 		.block_size = DT_INST_PROP(n, block_size),                                         \
 		.plane_size = DT_INST_PROP(n, plane_size),                                         \
 		.flash_size = DT_INST_PROP(n, flash_size),                                         \
+		.setup_time = DT_INST_PROP(n, setup_time),                                         \
+		.wait_setup_time = DT_INST_PROP(n, wait_setup_time),                               \
+		.hold_setup_time = DT_INST_PROP(n, hold_setup_time),                               \
+		.hiz_setup_time = DT_INST_PROP(n, hiz_setup_time),                                 \
 		LAYOUT_PAGES_PROP(n),                                                              \
 	};                                                                                         \
                                                                                                    \

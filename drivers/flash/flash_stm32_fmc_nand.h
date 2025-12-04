@@ -16,6 +16,10 @@ struct flash_stm32_fmc_nand_init {
 	size_t block_size;
 	size_t plane_size;
 	size_t flash_size;
+	uint8_t setup_time;
+	uint8_t wait_setup_time;
+	uint8_t hold_setup_time;
+	uint8_t hiz_setup_time;
 };
 
 int flash_stm32_fmc_nand_read_page_chunk(const struct device *dev,
@@ -27,6 +31,10 @@ int flash_stm32_fmc_nand_read_spare_area(const struct device *dev,
 
 int flash_stm32_fmc_nand_write_page(const struct device *dev,
 				    const struct nand_flash_address *address, const uint8_t *data);
+
+int flash_stm32_fmc_nand_write_spare_area(const struct device *dev,
+					  const struct nand_flash_address *address,
+					  const uint8_t *data);
 
 int flash_stm32_fmc_nand_erase_block(const struct device *dev,
 				     const struct nand_flash_address *address);

@@ -34,3 +34,23 @@ properties:
   flash-size:
     type: int
     required: true
+
+  setup-time:
+    type: int
+    required: false
+    default: 0
+
+  wait-setup-time:
+    type: int
+    required: false
+    default: 0
+
+  hold-setup-time:
+    type: int
+    required: false
+    default: 0
+
+  hiz-setup-time:
+    type: int
+    required: false
+    default: 0

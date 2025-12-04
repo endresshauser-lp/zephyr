@@ -111,3 +111,39 @@ child-binding:
       required: true
       description: |
         Total NAND flash size in bytes. Must be a multiple of plane size.
+
+    setup-time:
+      type: int
+      required: false
+      default: 0
+      description: |
+        Number of HCLK cycles to set up the address before asserting the command for NAND flash
+        read or write access. Applies to common, attribute, or I/O memory space, depending on the
+        timing configuration. Valid values: 0 to 254.
+
+    wait-setup-time:
+      type: int
+      required: false
+      default: 0
+      description: |
+        Minimum number of HCLK cycles to assert the command for NAND flash read or write access.
+        Applies to common, attribute, or I/O memory space, depending on the timing configuration.
+        Valid values: 0 to 254.
+
+    hold-setup-time:
+      type: int
+      required: false
+      default: 0
+      description: |
+        Number of HLCK cycles to hold address and possibly data after de-asserting the command for
+        NAND flash read or write access. Applies to common, attribute, or I/O memory space,
+        depending on the timing configuration. Valid values: 0 to 254.
+
+    hiz-setup-time:
+      type: int
+      required: false
+      default: 0
+      description: |
+        Number of HCLK cycles for keeping data bus in HiZ after starting a NAND flash write access.
+        Applies to common, attribute, or I/O memory space, depending on the timing configuration.
+        Valid values: 0 to 254.
