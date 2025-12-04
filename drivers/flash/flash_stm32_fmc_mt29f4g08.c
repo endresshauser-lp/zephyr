@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* TODO: Rename this driver if it specifically requires STM32 FMC NAND */
 #define DT_DRV_COMPAT micron_mt29f4g08
 
 #include <zephyr/drivers/flash.h>
@@ -13,7 +12,7 @@
 #include "flash_stm32_fmc_nand.h"
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(flash_mt29f4g08, CONFIG_FLASH_LOG_LEVEL);
+LOG_MODULE_REGISTER(flash_stm32_fmc_mt29f4g08, CONFIG_FLASH_LOG_LEVEL);
 
 #define ECC_FEATURE_ADDR 0x90
 #define ECC_FEATURE_DATA {0x08, 0x00, 0x00, 0x00}
@@ -230,7 +229,7 @@ int flash_mt29f4g08_ex_op(const struct device *dev, uint16_t code, const uintptr
 }
 #endif /* CONFIG_FLASH_EX_OP_ENABLED */
 
-static int flash_mt29f4g08_init(const struct device *dev)
+static int flash_stm32_fmc_mt29f4g08_init(const struct device *dev)
 {
 	const struct flash_mt29f4g08_config *config = dev->config;
 	const struct device *controller = config->controller;
@@ -281,12 +280,12 @@ static int flash_mt29f4g08_init(const struct device *dev)
 	}
 #endif /* CONFIG_FLASH_MT29F4G08_ECC */
 
-	LOG_INF("MT29F4G08 flash initialised with controller %s", controller->name);
+	LOG_INF("MT29F4G08 flash initialised with FMC controller %s", controller->name);
 
 	return 0;
 }
 
-static DEVICE_API(flash, flash_mt29f4g08_api) = {
+static DEVICE_API(flash, flash_stm32_fmc_mt29f4g08_api) = {
 	.read = flash_mt29f4g08_read,
 	.write = flash_mt29f4g08_write,
 	.erase = flash_mt29f4g08_erase,
@@ -309,8 +308,8 @@ static DEVICE_API(flash, flash_mt29f4g08_api) = {
 			.pages_size = DT_INST_PROP(n, block_size),                                 \
 		}))
 
-#define FLASH_MT29F4G08_INIT(n)                                                                    \
-	static const struct flash_mt29f4g08_config flash_mt29f4g08_config_##n = {                  \
+#define FLASH_STM32_FMC_MT29F4G08_INIT(n)                                                          \
+	static const struct flash_mt29f4g08_config flash_stm32_fmc_mt29f4g08_config_##n = {        \
 		.controller = DEVICE_DT_GET(DT_INST_PARENT(n)),                                    \
 		.parameters =                                                                      \
 			{                                                                          \
@@ -330,7 +329,8 @@ static DEVICE_API(flash, flash_mt29f4g08_api) = {
 		LAYOUT_PAGES_PROP(n),                                                              \
 	};                                                                                         \
                                                                                                    \
-	DEVICE_DT_INST_DEFINE(n, flash_mt29f4g08_init, NULL, NULL, &flash_mt29f4g08_config_##n,    \
-			      POST_KERNEL, CONFIG_FLASH_INIT_PRIORITY, &flash_mt29f4g08_api);
+	DEVICE_DT_INST_DEFINE(n, flash_stm32_fmc_mt29f4g08_init, NULL, NULL,                       \
+			      &flash_stm32_fmc_mt29f4g08_config_##n, POST_KERNEL,                  \
+			      CONFIG_FLASH_INIT_PRIORITY, &flash_stm32_fmc_mt29f4g08_api);
 
-DT_INST_FOREACH_STATUS_OKAY(FLASH_MT29F4G08_INIT)
+DT_INST_FOREACH_STATUS_OKAY(FLASH_STM32_FMC_MT29F4G08_INIT)
