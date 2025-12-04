@@ -12,7 +12,6 @@
 
 #include "flash_stm32_fmc_nand.h"
 
-/* TODO: Additionally introduce boolean configuration parameter for each driver instance */
 #define STM32_FMC_NAND_USE_DMA DT_ANY_INST_HAS_PROP_STATUS_OKAY(dmas)
 
 #if STM32_FMC_NAND_USE_DMA
@@ -57,6 +56,7 @@ static const uint32_t table_priority[] = {
 };
 
 struct stream {
+	bool enabled;
 	DMA_HandleTypeDef handle;
 	DMA_TypeDef *reg;
 	const struct device *dev;
@@ -187,35 +187,42 @@ int flash_stm32_fmc_nand_read_page_chunk(const struct device *dev,
 	sys_write8(NAND_CMD_AREA_A, NAND_DEVICE | CMD_AREA);
 
 #if STM32_FMC_NAND_USE_DMA
-	/* Get page data into buffer */
-	if (HAL_DMA_Start(&dev_data->dma.handle, NAND_DEVICE, (uint32_t)config->page_buffer,
-			  dev_data->page_size) != HAL_OK) {
-		dev_data->state = NAND_STATE_ERROR;
-		k_sem_give(&dev_data->lock);
-		return -EIO;
-	}
-	if (HAL_DMA_PollForTransfer(&dev_data->dma.handle, HAL_DMA_FULL_TRANSFER, DMA_TIMEOUT_MS) !=
-	    HAL_OK) {
-		dev_data->state = NAND_STATE_ERROR;
-		k_sem_give(&dev_data->lock);
-		return -EIO;
-	}
+	if (dev_data->dma.enabled) {
+		/* Get page data into buffer */
+		if (HAL_DMA_Start(&dev_data->dma.handle, NAND_DEVICE, (uint32_t)config->page_buffer,
+				  dev_data->page_size) != HAL_OK) {
+			dev_data->state = NAND_STATE_ERROR;
+			k_sem_give(&dev_data->lock);
+			return -EIO;
+		}
+		if (HAL_DMA_PollForTransfer(&dev_data->dma.handle, HAL_DMA_FULL_TRANSFER,
+					    DMA_TIMEOUT_MS) != HAL_OK) {
+			dev_data->state = NAND_STATE_ERROR;
+			k_sem_give(&dev_data->lock);
+			return -EIO;
+		}
 
-	/* Get chunk into output buffer */
-	if (dma_reload(dev_data->dma.dev, dev_data->dma.channel,
-		       (uint32_t)(config->page_buffer + page_offset), (uint32_t)data, chunk) != 0) {
-		dev_data->state = NAND_STATE_ERROR;
-		k_sem_give(&dev_data->lock);
-		return -EIO;
-	}
-#else
-	/* Get page data into buffer */
-	for (size_t index = 0; index < dev_data->page_size; index++) {
-		config->page_buffer[index] = sys_read8(NAND_DEVICE);
-	}
+		/* Get chunk into output buffer */
+		if (dma_reload(dev_data->dma.dev, dev_data->dma.channel,
+			       (uint32_t)(config->page_buffer + page_offset), (uint32_t)data,
+			       chunk) != 0) {
+			dev_data->state = NAND_STATE_ERROR;
+			k_sem_give(&dev_data->lock);
+			return -EIO;
+		}
+	} else {
+#endif /* STM32_FMC_NAND_USE_DMA */
 
-	/* Get chunk into output buffer */
-	memcpy(data, &config->page_buffer[page_offset], chunk);
+		/* Get page data into buffer */
+		for (size_t index = 0; index < dev_data->page_size; index++) {
+			config->page_buffer[index] = sys_read8(NAND_DEVICE);
+		}
+
+		/* Get chunk into output buffer */
+		memcpy(data, &config->page_buffer[page_offset], chunk);
+
+#if STM32_FMC_NAND_USE_DMA
+	}
 #endif /* STM32_FMC_NAND_USE_DMA */
 
 	dev_data->state = NAND_STATE_READY;
@@ -623,60 +630,63 @@ static int flash_stm32_fmc_nand_init(const struct device *dev)
 	LOG_DBG("FMC clock rate: %d Hz", fmc_freq);
 
 #if STM32_FMC_NAND_USE_DMA
-	/*
-	 * DMA configuration
-	 * Due to use of NAND HAL and Zephyr API in current driver,
-	 * both HAL and Zephyr DMA drivers should be configured.
-	 */
-	const struct flash_stm32_fmc_nand_config *config = dev->config;
-	int ret;
+	if (dev_data->dma.enabled) {
+		/*
+		 * DMA configuration
+		 * Due to use of NAND HAL and Zephyr API in current driver,
+		 * both HAL and Zephyr DMA drivers should be configured.
+		 */
+		const struct flash_stm32_fmc_nand_config *config = dev->config;
+		int ret;
 
-	if (!device_is_ready(dev_data->dma.dev)) {
-		LOG_ERR("DMA %s device is not ready", dev_data->dma.dev->name);
-		return -ENODEV;
+		if (!device_is_ready(dev_data->dma.dev)) {
+			LOG_ERR("DMA %s device is not ready", dev_data->dma.dev->name);
+			return -ENODEV;
+		}
+
+		/* Proceed to the Zephyr DMA driver init */
+		/* Dummy configuration to avoid warnings in dma_config(). The correct addresses are
+		 * set with dma_reload(). */
+		dev_data->dma.block_cfg.source_address = (uint32_t)config->page_buffer;
+		dev_data->dma.block_cfg.dest_address = (uint32_t)config->page_buffer;
+
+		dev_data->dma.cfg.head_block = &dev_data->dma.block_cfg;
+
+		ret = dma_config(dev_data->dma.dev, dev_data->dma.channel, &dev_data->dma.cfg);
+		if (ret != 0) {
+			LOG_ERR("Failed to configure DMA channel %d with error %d",
+				dev_data->dma.channel, ret);
+			return -EIO;
+		}
+
+		/* Proceed to the HAL DMA driver init */
+		int index = find_lsb_set(dev_data->dma.cfg.source_data_size) - 1;
+
+		/* Fill the structure for dma init */
+		dev_data->dma.handle.Init.Request = 0; /* Zero for memory-to-memory transfer */
+		dev_data->dma.handle.Init.Direction = DMA_MEMORY_TO_MEMORY;
+		dev_data->dma.handle.Init.SrcInc = DMA_SINC_INCREMENTED;
+		dev_data->dma.handle.Init.DestInc = DMA_DINC_INCREMENTED;
+		dev_data->dma.handle.Init.SrcDataWidth = table_src_size[index];
+		dev_data->dma.handle.Init.DestDataWidth = table_dest_size[index];
+		dev_data->dma.handle.Init.Priority =
+			table_priority[dev_data->dma.cfg.channel_priority];
+		dev_data->dma.handle.Init.SrcBurstLength = 64;
+		dev_data->dma.handle.Init.DestBurstLength = 64;
+		dev_data->dma.handle.Init.TransferAllocatedPort =
+			DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
+		dev_data->dma.handle.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
+		dev_data->dma.handle.Init.Mode = DMA_NORMAL;
+		dev_data->dma.handle.Instance =
+			STM32_DMA_GET_INSTANCE(dev_data->dma.reg, dev_data->dma.channel);
+
+		if (HAL_DMA_Init(&dev_data->dma.handle) != HAL_OK) {
+			LOG_ERR("FMC NAND DMA Init failed");
+			return -EIO;
+		}
+
+		LOG_INF("FMC NAND with DMA transfer");
 	}
-
-	/* Proceed to the Zephyr DMA driver init */
-	/* Dummy configuration to avoid warnings in dma_config(). The correct addresses are set
-	 * with dma_reload(). */
-	dev_data->dma.block_cfg.source_address = (uint32_t)config->page_buffer;
-	dev_data->dma.block_cfg.dest_address = (uint32_t)config->page_buffer;
-
-	dev_data->dma.cfg.head_block = &dev_data->dma.block_cfg;
-
-	ret = dma_config(dev_data->dma.dev, dev_data->dma.channel, &dev_data->dma.cfg);
-	if (ret != 0) {
-		LOG_ERR("Failed to configure DMA channel %d with error %d", dev_data->dma.channel,
-			ret);
-		return -EIO;
-	}
-
-	/* Proceed to the HAL DMA driver init */
-	int index = find_lsb_set(dev_data->dma.cfg.source_data_size) - 1;
-
-	/* Fill the structure for dma init */
-	dev_data->dma.handle.Init.Request = 0; /* Zero for memory-to-memory transfer */
-	dev_data->dma.handle.Init.Direction = DMA_MEMORY_TO_MEMORY;
-	dev_data->dma.handle.Init.SrcInc = DMA_SINC_INCREMENTED;
-	dev_data->dma.handle.Init.DestInc = DMA_DINC_INCREMENTED;
-	dev_data->dma.handle.Init.SrcDataWidth = table_src_size[index];
-	dev_data->dma.handle.Init.DestDataWidth = table_dest_size[index];
-	dev_data->dma.handle.Init.Priority = table_priority[dev_data->dma.cfg.channel_priority];
-	dev_data->dma.handle.Init.SrcBurstLength = 64;
-	dev_data->dma.handle.Init.DestBurstLength = 64;
-	dev_data->dma.handle.Init.TransferAllocatedPort =
-		DMA_SRC_ALLOCATED_PORT0 | DMA_DEST_ALLOCATED_PORT1;
-	dev_data->dma.handle.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
-	dev_data->dma.handle.Init.Mode = DMA_NORMAL;
-	dev_data->dma.handle.Instance =
-		STM32_DMA_GET_INSTANCE(dev_data->dma.reg, dev_data->dma.channel);
-
-	if (HAL_DMA_Init(&dev_data->dma.handle) != HAL_OK) {
-		LOG_ERR("FMC NAND DMA Init failed");
-		return -EIO;
-	}
-
-	LOG_INF("FMC NAND with DMA transfer");
 #endif /* STM32_FMC_NAND_USE_DMA */
 
 	return 0;
@@ -700,7 +710,7 @@ static void fmc_nand_dma_callback(const struct device *dev, void *user_data, uin
 #define DMA_CHANNEL_CONFIG(node, dir) DT_DMAS_CELL_BY_NAME(node, dir, channel_config)
 
 #define FMC_NAND_DMA_CHANNEL_INIT(node, dir)                                                       \
-	.reg = (DMA_TypeDef *)DT_REG_ADDR(DT_PHANDLE_BY_NAME(node, dmas, dir)),                    \
+	.enabled = true, .reg = (DMA_TypeDef *)DT_REG_ADDR(DT_PHANDLE_BY_NAME(node, dmas, dir)),   \
 	.dev = DEVICE_DT_GET(DT_DMAS_CTLR(node)),                                                  \
 	.channel = DT_DMAS_CELL_BY_NAME(node, dir, channel),                                       \
 	.cfg = {                                                                                   \
