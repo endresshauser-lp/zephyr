@@ -1,0 +1,20 @@
+/ {
+	ftl {
+		compatible = "zephyr,ftl-dhara";
+		partition = <&data_partition>;
+		disk-name = "DATA";
+		buffer-size = <DT_SIZE_K(2)>;
+		gc-ratio = <15>;
+	};
+
+	fstab {
+		compatible = "zephyr,fstab";
+
+		data {
+			compatible = "zephyr,fstab,fatfs";
+			mount-point = "/data:";
+			automount;
+			disk-access;
+		};
+	};
+};

@@ -9,6 +9,7 @@
 int main(void)
 {
 	printf("Hello World! %s\n", CONFIG_BOARD_TARGET);
+	printf("NAND Flash Test Firmware\n");
 
 	return 0;
 }
