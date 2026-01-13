@@ -350,8 +350,8 @@ static int read_write_erase_validate(const struct shell *sh, size_t argc, char *
 		return -EINVAL;
 	}
 
-	if (*repeat == 0 || *repeat > 10) {
-		shell_error(sh, "<repeat> must be between 1 and 10.");
+	if (*repeat == 0 || *repeat > 100000) {
+		shell_error(sh, "<repeat> must be between 1 and 100000.");
 		return -EINVAL;
 	}
 
