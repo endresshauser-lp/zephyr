@@ -17,14 +17,14 @@
 LOG_MODULE_REGISTER(disk_ftl, CONFIG_DISK_FTL_LOG_LEVEL);
 
 struct disk_ftl_data {
-#if CONFIG_DISK_FTL_SUPPORT_CONCURRENT_ACCESS
 	struct k_sem lock;
-#endif
 	bool initialised;
 	struct disk_info info;
 	const struct flash_area *area;
+	off_t partition_offset;
 	size_t page_size;
 	size_t block_size;
+	size_t partition_size;
 	size_t buffer_size;
 	uint8_t *page_buffer;
 	struct dhara_map dhara_map;
@@ -36,7 +36,7 @@ struct disk_ftl_data {
 int dhara_nand_is_bad(const struct dhara_nand *n, dhara_block_t b)
 {
 	struct disk_ftl_data *ctx = CONTAINER_OF(n, struct disk_ftl_data, dhara_nand);
-	off_t block_addr = b * ctx->block_size + ctx->area->fa_off;
+	off_t block_addr = b * ctx->block_size + ctx->partition_offset;
 	int block_status = FLASH_BLOCK_BAD;
 	int ret;
 
@@ -45,14 +45,13 @@ int dhara_nand_is_bad(const struct dhara_nand *n, dhara_block_t b)
 		LOG_DBG("checking bad block is not supported");
 		return 0;
 	} else if (ret != 0) {
-		LOG_ERR("checking bad block at 0x%08lx failed with error %d", (long)block_addr,
-			ret);
+		LOG_ERR("checking bad block at 0x%08lx failed with error %d", block_addr, ret);
 		return 1;
 	} else if (block_status == FLASH_BLOCK_BAD) {
-		LOG_INF("block at 0x%08lx is marked bad", (long)block_addr);
+		LOG_INF("block at 0x%08lx is marked bad", block_addr);
 	} else {
 		/* No more action if block is good */
-		LOG_DBG("block at 0x%08lx is good", (long)block_addr);
+		LOG_DBG("block at 0x%08lx is good", block_addr);
 	}
 
 	return (block_status == FLASH_BLOCK_BAD) ? 1 : 0;
@@ -61,30 +60,30 @@ int dhara_nand_is_bad(const struct dhara_nand *n, dhara_block_t b)
 void dhara_nand_mark_bad(const struct dhara_nand *n, dhara_block_t b)
 {
 	struct disk_ftl_data *ctx = CONTAINER_OF(n, struct disk_ftl_data, dhara_nand);
-	off_t block_addr = b * ctx->block_size + ctx->area->fa_off;
+	off_t block_addr = b * ctx->block_size + ctx->partition_offset;
 	int ret;
 
 	ret = flash_ex_op(ctx->info.dev, FLASH_MARK_BAD_BLOCK, (uintptr_t)&block_addr, NULL);
 	if (ret == -ENOTSUP) {
 		LOG_INF("marking bad block is not supported");
 	} else if (ret != 0) {
-		LOG_ERR("marking bad block at 0x%08lx failed with error %d", (long)block_addr, ret);
+		LOG_ERR("marking bad block at 0x%08lx failed with error %d", block_addr, ret);
 	} else {
-		LOG_DBG("marked block bad at 0x%08lx", (long)block_addr);
+		LOG_DBG("marked block bad at 0x%08lx", block_addr);
 	}
 }
 
 int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b, dhara_error_t *err)
 {
 	struct disk_ftl_data *ctx = CONTAINER_OF(n, struct disk_ftl_data, dhara_nand);
-	off_t block_addr = b * ctx->block_size + ctx->area->fa_off;
+	off_t block_addr = b * ctx->block_size + ctx->partition_offset;
 	int ret;
 
-	LOG_DBG("erasing block at 0x%08lx", (long)block_addr);
+	LOG_DBG("erasing block at 0x%08lx", block_addr);
 
 	ret = flash_erase(ctx->info.dev, block_addr, ctx->block_size);
 	if (ret != 0) {
-		LOG_ERR("erasing block at 0x%08lx failed with error %d", (long)block_addr, ret);
+		LOG_ERR("erasing block at 0x%08lx failed with error %d", block_addr, ret);
 		*err = DHARA_E_BAD_BLOCK;
 		return -1;
 	}
@@ -96,14 +95,14 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *d
 		    dhara_error_t *err)
 {
 	struct disk_ftl_data *ctx = CONTAINER_OF(n, struct disk_ftl_data, dhara_nand);
-	off_t page_addr = p * ctx->page_size + ctx->area->fa_off;
+	off_t page_addr = p * ctx->page_size + ctx->partition_offset;
 	int ret;
 
-	LOG_DBG("writing page at 0x%08lx", (long)page_addr);
+	LOG_DBG("writing page at 0x%08lx", page_addr);
 
 	ret = flash_write(ctx->info.dev, page_addr, data, ctx->page_size);
 	if (ret != 0) {
-		LOG_ERR("writing page at 0x%08lx failed with error %d", (long)page_addr, ret);
+		LOG_ERR("writing page at 0x%08lx failed with error %d", page_addr, ret);
 		*err = DHARA_E_BAD_BLOCK;
 		return -1;
 	}
@@ -115,22 +114,19 @@ int dhara_nand_is_free(const struct dhara_nand *n, dhara_page_t p)
 {
 	struct disk_ftl_data *ctx = CONTAINER_OF(n, struct disk_ftl_data, dhara_nand);
 	const struct flash_parameters *flash_params = flash_get_parameters(ctx->info.dev);
-	off_t page_addr = p * ctx->page_size + ctx->area->fa_off;
+	off_t page_addr = p * ctx->page_size + ctx->partition_offset;
+	uint8_t empty_page[ctx->page_size];
 	int ret;
 
-	LOG_DBG("checking erase status of page at 0x%08lx", (long)page_addr);
-
+	LOG_DBG("checking erase status of page at 0x%08lx", page_addr);
 	ret = flash_read(ctx->info.dev, page_addr, ctx->page_buffer, ctx->page_size);
 	if (ret != 0) {
-		LOG_ERR("reading page at 0x%08lx failed with error %d", (long)page_addr, ret);
+		LOG_ERR("reading page at 0x%08lx failed with error %d", page_addr, ret);
 		return 0;
 	}
 
-	if (ctx->page_buffer[0] != flash_params->erase_value) {
-		return 0;
-	}
-
-	if (memcmp(ctx->page_buffer, ctx->page_buffer + 1, ctx->page_size - 1) != 0) {
+	memset(empty_page, flash_params->erase_value, sizeof(empty_page));
+	if (memcmp(ctx->page_buffer, empty_page, ctx->page_size) != 0) {
 		return 0;
 	}
 
@@ -141,16 +137,14 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p, size_t offset, s
 		    uint8_t *data, dhara_error_t *err)
 {
 	struct disk_ftl_data *ctx = CONTAINER_OF(n, struct disk_ftl_data, dhara_nand);
-	off_t page_addr = p * ctx->page_size + ctx->area->fa_off;
+	off_t page_addr = p * ctx->page_size + ctx->partition_offset;
 	int ret;
 
-	LOG_DBG("reading page at 0x%08lx, offset 0x%zx, length 0x%zx", (long)page_addr, offset,
-		length);
+	LOG_DBG("reading page at 0x%08lx, offset 0x%zx, length 0x%zx", page_addr, offset, length);
 
 	ret = flash_read(ctx->info.dev, page_addr + offset, data, length);
 	if (ret != 0) {
-		LOG_ERR("reading data at 0x%08lx failed with error %d", (long)(page_addr + offset),
-			ret);
+		LOG_ERR("reading data at 0x%08lx failed with error %d", page_addr + offset, ret);
 		*err = DHARA_E_ECC;
 		return -1;
 	}
@@ -162,74 +156,27 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
 		    dhara_error_t *err)
 {
 	struct disk_ftl_data *ctx = CONTAINER_OF(n, struct disk_ftl_data, dhara_nand);
-	off_t src_page_addr = src * ctx->page_size + ctx->area->fa_off;
-	off_t dst_page_addr = dst * ctx->page_size + ctx->area->fa_off;
+	off_t src_page_addr = src * ctx->page_size + ctx->partition_offset;
+	off_t dst_page_addr = dst * ctx->page_size + ctx->partition_offset;
 	int ret;
 
-	LOG_DBG("copying page from 0x%08lx to 0x%08lx", (long)src_page_addr, (long)dst_page_addr);
+	LOG_DBG("copying page from 0x%08lx to 0x%08lx", src_page_addr, dst_page_addr);
 
 	ret = flash_read(ctx->info.dev, src_page_addr, ctx->page_buffer, ctx->page_size);
 	if (ret != 0) {
-		LOG_ERR("reading page at 0x%08lx failed with error %d", (long)src_page_addr, ret);
+		LOG_ERR("reading page at 0x%08lx failed with error %d", src_page_addr, ret);
 		*err = DHARA_E_ECC;
 		return -1;
 	}
 
 	ret = flash_write(ctx->info.dev, dst_page_addr, ctx->page_buffer, ctx->page_size);
 	if (ret != 0) {
-		LOG_ERR("writing page at 0x%08lx failed with error %d", (long)dst_page_addr, ret);
+		LOG_ERR("writing page at 0x%08lx failed with error %d", dst_page_addr, ret);
 		*err = DHARA_E_BAD_BLOCK;
 		return -1;
 	}
 
 	return 0;
-}
-
-static __maybe_unused int flash_area_is_uniform(const struct flash_area *fa)
-{
-	int ret;
-	struct flash_pages_info page;
-	size_t block_size = 0;
-	off_t offset = fa->fa_off;
-
-	while (offset < (fa->fa_off + fa->fa_size)) {
-		ret = flash_get_page_info_by_offs(fa->fa_dev, offset, &page);
-		if (ret != 0) {
-			return ret;
-		}
-
-		if (block_size == 0) {
-			block_size = page.size;
-		}
-
-		if (page.size != block_size) {
-			return -EINVAL;
-		}
-
-		offset += page.size;
-	}
-
-	return 0;
-}
-
-/* Everything necessary to acquire owning access to the disk. */
-static void acquire_disk(__maybe_unused struct disk_info *disk)
-{
-#if CONFIG_DISK_FTL_SUPPORT_CONCURRENT_ACCESS
-	struct disk_ftl_data *ctx = CONTAINER_OF(disk, struct disk_ftl_data, info);
-
-	k_sem_take(&ctx->lock, K_FOREVER);
-#endif
-}
-
-/* Everything necessary to release access to the disk. */
-static void release_disk(__maybe_unused struct disk_info *disk)
-{
-#if CONFIG_DISK_FTL_SUPPORT_CONCURRENT_ACCESS
-	struct disk_ftl_data *ctx = CONTAINER_OF(disk, struct disk_ftl_data, info);
-
-	k_sem_give(&ctx->lock);
-#endif
 }
 
 int disk_ftl_access_init(struct disk_info *disk)
@@ -238,60 +185,84 @@ int disk_ftl_access_init(struct disk_info *disk)
 	const struct flash_parameters *flash_params;
 	struct flash_pages_info page; /* Information of the smallest erasable area */
 	dhara_error_t err;
+	off_t offset;
 	int ret;
 
-	acquire_disk(disk);
+	k_sem_take(&ctx->lock, K_FOREVER);
 
 	if (ctx->initialised) {
-		release_disk(disk);
 		LOG_ERR("FTL is already initialised");
+		k_sem_give(&ctx->lock);
 		return -EALREADY;
 	}
 
 	if (!flash_area_device_is_ready(ctx->area)) {
-		release_disk(disk);
 		LOG_ERR("Flash device %s is not ready", ctx->area->fa_dev->name);
+		k_sem_give(&ctx->lock);
 		return -ENODEV;
 	}
 
 	ctx->info.dev = flash_area_get_device(ctx->area);
 
 	if (ctx->info.dev == NULL) {
-		release_disk(disk);
 		LOG_ERR("Flash device was not found");
+		k_sem_give(&ctx->lock);
 		return -ENODEV;
 	}
 
 	flash_params = flash_get_parameters(disk->dev);
 	ctx->page_size = flash_params->write_block_size;
-	__ASSERT(ctx->buffer_size >= ctx->page_size,
-		 "Buffer size %u is too small for pages with size %u", ctx->buffer_size,
-		 ctx->page_size);
+	if (ctx->page_size > ctx->buffer_size) {
+		LOG_ERR("Buffer size %u is too small for pages with size %u", ctx->buffer_size,
+			ctx->page_size);
+		k_sem_give(&ctx->lock);
+		return -ENOMEM;
+	}
 
-	ret = flash_get_page_info_by_offs(disk->dev, ctx->area->fa_off, &page);
+	ret = flash_get_page_info_by_offs(disk->dev, ctx->partition_offset, &page);
 	if (ret != 0) {
-		release_disk(disk);
-		LOG_ERR("Getting flash page info at 0x%lX failed with error %d", ctx->area->fa_off,
-			ret);
+		LOG_ERR("Getting flash page info at 0x%lX failed with error %d",
+			ctx->partition_offset, ret);
+		k_sem_give(&ctx->lock);
 		return ret;
 	}
 
+	if (ctx->partition_offset != page.start_offset) {
+		LOG_ERR("Partition does not start at beginning of an erase block");
+		k_sem_give(&ctx->lock);
+		return -EINVAL;
+	}
+
 	ctx->block_size = page.size;
+	offset = ctx->partition_offset + page.size;
 
-	__ASSERT(ctx->area->fa_off == page.start_offset,
-		 "Partition does not start at beginning of an erase block");
-	__ASSERT(ctx->area->fa_size % page.size == 0,
-		 "Partition size is not a multiple of erase block size");
-	__ASSERT(flash_area_is_uniform(ctx->area) == 0,
-		 "Partition does not have uniform erase block size");
+	while (offset < ctx->partition_offset + ctx->partition_size) {
+		ret = flash_get_page_info_by_offs(disk->dev, offset, &page);
+		if (ret != 0) {
+			LOG_ERR("Getting flash page info at 0x%lX failed with error %d", offset,
+				ret);
+			k_sem_give(&ctx->lock);
+			return ret;
+		}
 
-	__ASSERT((ctx->page_size & (ctx->page_size - 1)) == 0, "page size is not a power of 2");
-	__ASSERT((ctx->block_size & (ctx->block_size - 1)) == 0,
-		 "erase block size is not a power of 2");
+		if (page.size != ctx->block_size) {
+			LOG_ERR("Non-uniform block size is not supported");
+			k_sem_give(&ctx->lock);
+			return -EINVAL;
+		}
+
+		offset += page.size;
+	}
+
+	if (offset != ctx->partition_offset + ctx->partition_size) {
+		LOG_ERR("Last block does not end at partition boundary");
+		k_sem_give(&ctx->lock);
+		return -EINVAL;
+	}
 
 	ctx->dhara_nand.log2_page_size = LOG2CEIL(ctx->page_size);
 	ctx->dhara_nand.log2_ppb = LOG2CEIL(ctx->block_size / ctx->page_size);
-	ctx->dhara_nand.num_blocks = ctx->area->fa_size / ctx->block_size;
+	ctx->dhara_nand.num_blocks = ctx->partition_size / ctx->block_size;
 
 	LOG_DBG("Initialise Dhara with log2_page_size=%u, log2_ppb=%u, num_blocks=%u",
 		ctx->dhara_nand.log2_page_size, ctx->dhara_nand.log2_ppb,
@@ -301,11 +272,11 @@ int disk_ftl_access_init(struct disk_info *disk)
 
 	ret = dhara_map_resume(&ctx->dhara_map, &err);
 	if (ret != 0) {
-		LOG_ERR("dhara_map_resume failed with error %d", err);
+		LOG_INF("dhara_map_resume failed with error %d", err);
 	}
 
 	ctx->initialised = true;
-	release_disk(disk);
+	k_sem_give(&ctx->lock);
 
 	return 0;
 }
@@ -319,9 +290,11 @@ static int disk_ftl_access_status(struct disk_info *disk)
 		status |= DISK_STATUS_NOMEDIA;
 	}
 
+	k_sem_take(&ctx->lock, K_FOREVER);
 	if (!ctx->initialised) {
 		status |= DISK_STATUS_UNINIT;
 	}
+	k_sem_give(&ctx->lock);
 
 	return status;
 }
@@ -330,40 +303,46 @@ static int disk_ftl_access_read(struct disk_info *disk, uint8_t *data_buf, uint3
 				uint32_t num_sector)
 {
 	struct disk_ftl_data *ctx = CONTAINER_OF(disk, struct disk_ftl_data, info);
+	uint32_t end_sector;
 	uint32_t total_sectors;
 	dhara_error_t err;
 	int ret;
-	uint8_t *buffer = data_buf;
 
-	acquire_disk(disk);
-
-	if (!ctx->initialised) {
-		release_disk(disk);
-		return -EINVAL;
-	}
+	k_sem_take(&ctx->lock, K_FOREVER);
 
 	total_sectors = dhara_map_capacity(&ctx->dhara_map);
 
-	if ((total_sectors < num_sector) || (total_sectors - num_sector) < start_sector) {
-		release_disk(disk);
+	if (u32_add_overflow(start_sector, num_sector, &end_sector) ||
+	    (end_sector > total_sectors)) {
 		LOG_ERR("Requested sectors are out of range");
+		k_sem_give(&ctx->lock);
 		return -EINVAL;
 	}
 
 	for (uint32_t i = 0; i < num_sector; i++) {
 		uint32_t sector = start_sector + i;
+		uint8_t *buffer = data_buf + (i * ctx->page_size);
 
 		ret = dhara_map_read(&ctx->dhara_map, sector, buffer, &err);
-		if (ret != 0) {
-			release_disk(disk);
-			LOG_ERR("dhara_map_read failed with error %d", err);
+		if (ret == 0) {
+			continue;
+		}
+
+		LOG_ERR("dhara_map_read failed with error %d", err);
+		if (err != DHARA_E_ECC) {
+			k_sem_give(&ctx->lock);
 			return -EIO;
 		}
 
-		buffer += ctx->page_size;
+		ret = dhara_map_write(&ctx->dhara_map, sector, buffer, &err);
+		if (ret != 0) {
+			LOG_ERR("dhara_map_write failed with error %d", err);
+			k_sem_give(&ctx->lock);
+			return -EIO;
+		}
 	}
 
-	release_disk(disk);
+	k_sem_give(&ctx->lock);
 
 	return 0;
 }
@@ -372,40 +351,35 @@ static int disk_ftl_access_write(struct disk_info *disk, const uint8_t *data_buf
 				 uint32_t start_sector, uint32_t num_sector)
 {
 	struct disk_ftl_data *ctx = CONTAINER_OF(disk, struct disk_ftl_data, info);
+	uint32_t end_sector;
 	uint32_t total_sectors;
 	dhara_error_t err;
 	int ret;
-	const uint8_t *buffer = data_buf;
 
-	acquire_disk(disk);
-
-	if (!ctx->initialised) {
-		release_disk(disk);
-		return -EINVAL;
-	}
+	k_sem_take(&ctx->lock, K_FOREVER);
 
 	total_sectors = dhara_map_capacity(&ctx->dhara_map);
 
-	if ((total_sectors < num_sector) || (total_sectors - num_sector) < start_sector) {
-		release_disk(disk);
+	if (u32_add_overflow(start_sector, num_sector, &end_sector) ||
+	    (end_sector > total_sectors)) {
 		LOG_ERR("Requested sectors are out of range");
+		k_sem_give(&ctx->lock);
 		return -EINVAL;
 	}
 
 	for (uint32_t i = 0; i < num_sector; i++) {
 		uint32_t sector = start_sector + i;
+		const uint8_t *buffer = data_buf + (i * ctx->page_size);
 
 		ret = dhara_map_write(&ctx->dhara_map, sector, buffer, &err);
 		if (ret != 0) {
-			release_disk(disk);
 			LOG_ERR("dhara_map_write failed with error %d", err);
+			k_sem_give(&ctx->lock);
 			return -EIO;
 		}
-
-		buffer += ctx->page_size;
 	}
 
-	release_disk(disk);
+	k_sem_give(&ctx->lock);
 
 	return 0;
 }
@@ -413,22 +387,19 @@ static int disk_ftl_access_write(struct disk_info *disk, const uint8_t *data_buf
 static int disk_ftl_access_erase(struct disk_info *disk, uint32_t start_sector, uint32_t num_sector)
 {
 	struct disk_ftl_data *ctx = CONTAINER_OF(disk, struct disk_ftl_data, info);
+	uint32_t end_sector;
 	uint32_t total_sectors;
 	dhara_error_t err;
 	int ret;
 
-	acquire_disk(disk);
-
-	if (!ctx->initialised) {
-		release_disk(disk);
-		return -EINVAL;
-	}
+	k_sem_take(&ctx->lock, K_FOREVER);
 
 	total_sectors = dhara_map_capacity(&ctx->dhara_map);
 
-	if ((total_sectors < num_sector) || (total_sectors - num_sector) < start_sector) {
-		release_disk(disk);
+	if (u32_add_overflow(start_sector, num_sector, &end_sector) ||
+	    (end_sector > total_sectors)) {
 		LOG_ERR("Requested sectors are out of range");
+		k_sem_give(&ctx->lock);
 		return -EINVAL;
 	}
 
@@ -437,13 +408,13 @@ static int disk_ftl_access_erase(struct disk_info *disk, uint32_t start_sector, 
 
 		ret = dhara_map_trim(&ctx->dhara_map, sector, &err);
 		if (ret != 0) {
-			release_disk(disk);
 			LOG_ERR("dhara_map_trim failed with error %d", err);
+			k_sem_give(&ctx->lock);
 			return -EIO;
 		}
 	}
 
-	release_disk(disk);
+	k_sem_give(&ctx->lock);
 
 	return 0;
 }
@@ -456,25 +427,13 @@ static int disk_ftl_access_ioctl(struct disk_info *disk, uint8_t cmd, void *buff
 
 	switch (cmd) {
 	case DISK_IOCTL_GET_SECTOR_COUNT:
-		acquire_disk(disk);
-		if (!ctx->initialised) {
-			release_disk(disk);
-			return -EINVAL;
-		}
-
+		k_sem_take(&ctx->lock, K_FOREVER);
 		*(uint32_t *)buff = dhara_map_capacity(&ctx->dhara_map);
-		release_disk(disk);
+		k_sem_give(&ctx->lock);
 		break;
 
 	case DISK_IOCTL_GET_SECTOR_SIZE:
-		acquire_disk(disk);
-		if (!ctx->initialised) {
-			release_disk(disk);
-			return -EINVAL;
-		}
-
 		*(uint32_t *)buff = ctx->page_size;
-		release_disk(disk);
 		break;
 
 	case DISK_IOCTL_GET_ERASE_BLOCK_SZ: /* in sectors */
@@ -482,14 +441,10 @@ static int disk_ftl_access_ioctl(struct disk_info *disk, uint8_t cmd, void *buff
 		break;
 
 	case DISK_IOCTL_CTRL_SYNC:
-		acquire_disk(disk);
-		if (!ctx->initialised) {
-			release_disk(disk);
-			return -EINVAL;
-		}
-
+	case DISK_IOCTL_CTRL_DEINIT:
+		k_sem_take(&ctx->lock, K_FOREVER);
 		ret = dhara_map_sync(&ctx->dhara_map, &err);
-		release_disk(disk);
+		k_sem_give(&ctx->lock);
 		if (ret != 0) {
 			LOG_ERR("dhara_map_sync failed with error %d", err);
 			return -EIO;
@@ -498,23 +453,6 @@ static int disk_ftl_access_ioctl(struct disk_info *disk, uint8_t cmd, void *buff
 
 	case DISK_IOCTL_CTRL_INIT:
 		return disk_ftl_access_init(disk);
-
-	case DISK_IOCTL_CTRL_DEINIT:
-		acquire_disk(disk);
-		if (!ctx->initialised) {
-			release_disk(disk);
-			break;
-		}
-		ret = dhara_map_sync(&ctx->dhara_map, &err);
-		if (ret != 0) {
-			release_disk(disk);
-			LOG_ERR("dhara_map_sync failed with error %d", err);
-			return -EIO;
-		}
-
-		ctx->initialised = false;
-		release_disk(disk);
-		break;
 
 	default:
 		LOG_ERR("Unsupported ioctl command %u", cmd);
@@ -528,9 +466,7 @@ static int disk_ftl_init(const struct device *dev)
 {
 	struct disk_ftl_data *dev_data = dev->data;
 
-#if CONFIG_DISK_FTL_SUPPORT_CONCURRENT_ACCESS
 	k_sem_init(&dev_data->lock, 1, 1);
-#endif
 
 	return disk_access_register(&dev_data->info);
 }
@@ -558,6 +494,8 @@ static const struct disk_operations disk_ftl_ops = {
 				.ops = &disk_ftl_ops,                                              \
 			},                                                                         \
 		.area = FIXED_PARTITION_BY_NODE(PARTITION_PHANDLE(n)),                             \
+		.partition_offset = FIXED_PARTITION_NODE_OFFSET(PARTITION_PHANDLE(n)),             \
+		.partition_size = FIXED_PARTITION_NODE_SIZE(PARTITION_PHANDLE(n)),                 \
 		.buffer_size = DT_INST_PROP(n, buffer_size),                                       \
 		.page_buffer = disk_ftl_page_buffer_##n,                                           \
 		.dhara_buffer = disk_ftl_dhara_buffer_##n,                                         \
@@ -565,6 +503,6 @@ static const struct disk_operations disk_ftl_ops = {
 	};                                                                                         \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(n, disk_ftl_init, NULL, &disk_ftl_data_##n, NULL, POST_KERNEL,       \
-			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, NULL);
+			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &disk_ftl_ops);
 
 DT_INST_FOREACH_STATUS_OKAY(DISK_FTL_INIT)

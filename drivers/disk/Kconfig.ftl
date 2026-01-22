@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Endress+Hauser GmbH+Co. KG
+# Copyright (c) 2026 Endress+Hauser GmbH+Co. KG
 # SPDX-License-Identifier: Apache-2.0
 
 config DISK_DRIVER_FTL
@@ -13,12 +13,6 @@ config DISK_DRIVER_FTL
 	  Enable flash translation layer disk driver for NAND flashes.
 
 if DISK_DRIVER_FTL
-
-config DISK_FTL_SUPPORT_CONCURRENT_ACCESS
-	bool "Support concurrent access"
-	help
-	  Enable support for concurrent access to the disk. This allows multiple threads
-	  to access the disk at the same time.
 
 module = DISK_FTL
 module-str = disk_ftl
