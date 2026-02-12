@@ -73,7 +73,7 @@ union mspi_stm32_handle {
 #ifdef CONFIG_MSPI_STM32_QSPI
 	QSPI_HandleTypeDef qspi;
 #endif
-#ifdef CONFIG_MSPI_STM32_XSPI
+#if defined(CONFIG_MSPI_STM32_XSPI) || defined(CONFIG_MSPI_STM32_XSPI_PSRAM)
 	XSPI_HandleTypeDef xspi;
 #endif
 };
@@ -94,7 +94,7 @@ struct mspi_stm32_data {
 #if defined(CONFIG_MSPI_STM32_OSPI) || defined(CONFIG_MSPI_STM32_QSPI)
 	DMA_HandleTypeDef hdma;
 #endif
-#ifdef CONFIG_MSPI_STM32_XSPI
+#if defined(CONFIG_MSPI_STM32_XSPI) || defined(CONFIG_MSPI_STM32_XSPI_PSRAM)
 	DMA_HandleTypeDef hdma_tx;
 	DMA_HandleTypeDef hdma_rx;
 #endif

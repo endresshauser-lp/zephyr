@@ -23,4 +23,10 @@ config MEMC_MSPI_APS_Z8
 	select MEMC_MSPI
 	select MSPI_AMBIQ_CONTROLLER if SOC_FAMILY_AMBIQ
 
+config MEMC_MSPI_IS66WVO8M8
+	bool "MSPI IS66WVO8M8 PSRAM driver"
+	default y
+	depends on DT_HAS_MSPI_IS66WVO8M8_ENABLED
+	select MEMC_MSPI
+
 endmenu

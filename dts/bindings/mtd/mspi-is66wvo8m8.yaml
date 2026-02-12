@@ -1,0 +1,99 @@
+# Copyright (c) 2024, Ambiq Micro Inc. <www.ambiq.com>
+# SPDX-License-Identifier: Apache-2.0
+
+description: ISSI IS66/67 WVO8M8DALL/BLL PSRAM driver.
+
+compatible: "mspi-is66wvo8m8"
+
+include: [mspi-device.yaml, "jedec,jesd216.yaml"]
+
+properties:
+  reset-gpios:
+    type: phandle-array
+    description: |
+      Optional reset pin of the device.
+
+  setup-tx-dummy:
+    type: int
+    default: 0
+    description: |
+      TX dummy cycles used for configuration.
+
+  setup-rx-dummy:
+    type: int
+    default: 15
+    description: |
+      RX dummy cycles used for configuration.
+
+  dqsm-read-pre-cycle:
+    type: boolean
+    description: |
+      Enable DQSM pre cycle read (need to add 1 to RX dummy cycles).
+
+  fixed-latency:
+    type: boolean
+    description: |
+      Operate PSRAM in fixed latency mode.
+
+  hybrid-mode:
+    type: boolean
+    description: |
+      Operate PSRAM in hybrid mode.
+
+  latency-counter:
+    type: string
+    default: "LC_7_CLK"
+    description: |
+      Latency counter (LC) of the PSRAM.
+    enum:
+      - "LC_3_CLK"
+      - "LC_4_CLK"
+      - "LC_5_CLK"
+      - "LC_6_CLK"
+      - "LC_7_CLK"
+      - "LC_8_CLK"
+
+  output-driver-strength:
+    type: string
+    default: "ODS_DEFAULT_OHMS"
+    description: |
+      Output driver strength in Ohms.
+    enum:
+      - "ODS_100_OHMS"
+      - "ODS_66_OHMS"
+      - "ODS_50_OHMS"
+      - "ODS_40_OHMS"
+      - "ODS_33_OHMS"
+      - "ODS_33_OHMS_2"
+      - "ODS_25_OHMS"
+      - "ODS_DEFAULT_OHMS"
+
+  wrapped-burst-sequence:
+    type: string
+    default: "WRAP_32"
+    description: |
+      Wrapped burst sequence count in bytes.
+    enum:
+      - "WRAP_128"
+      - "WRAP_64"
+      - "WRAP_32"
+      - "WRAP_16"
+      - "WRAP_128_HYBRID"
+      - "WRAP_64_HYBRID"
+      - "WRAP_32_HYBRID"
+      - "WRAP_16_HYBRID"
+
+  partial-array-refresh:
+    type: string
+    default: "REFRESH_FULL"
+    description: |
+      Settings for partial array refresh.
+    enum:
+      - "REFRESH_FULL"
+      - "REFRESH_BOTTOM_HALF"
+      - "REFRESH_BOTTOM_QUARTER"
+      - "REFRESH_BOTTOM_EIGHTH"
+      - "REFRESH_RESERVED"
+      - "REFRESH_TOP_HALF"
+      - "REFRESH_TOP_QUARTER"
+      - "REFRESH_TOP_EIGHTH"

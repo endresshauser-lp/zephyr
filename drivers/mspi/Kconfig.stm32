@@ -7,7 +7,8 @@ config MSPI_STM32_CONTROLLER
 	bool "STM32 MSPI Controller drivers"
 	depends on DT_HAS_ST_STM32_OSPI_CONTROLLER_ENABLED || \
 	           DT_HAS_ST_STM32_QSPI_CONTROLLER_ENABLED || \
-	           DT_HAS_ST_STM32_XSPI_CONTROLLER_ENABLED
+	           DT_HAS_ST_STM32_XSPI_CONTROLLER_ENABLED || \
+               DT_HAS_ST_STM32_XSPI_PSRAM_CONTROLLER_ENABLED
 	select EXPERIMENTAL
 	default y
 	help
@@ -51,6 +52,17 @@ config MSPI_STM32_QSPI
 config MSPI_STM32_XSPI
 	bool "STM32 XSPI Controller driver"
 	depends on DT_HAS_ST_STM32_XSPI_CONTROLLER_ENABLED
+	default y
+	select USE_STM32_HAL_XSPI
+	select USE_STM32_LL_DLYB
+	select USE_STM32_HAL_DMA
+	select USE_STM32_HAL_DMA_EX
+	help
+	  Enable XSPI driver for STM32 family of processors.
+
+config MSPI_STM32_XSPI_PSRAM
+	bool "STM32 XSPI Controller driver"
+	depends on DT_HAS_ST_STM32_XSPI_PSRAM_CONTROLLER_ENABLED
 	default y
 	select USE_STM32_HAL_XSPI
 	select USE_STM32_LL_DLYB
