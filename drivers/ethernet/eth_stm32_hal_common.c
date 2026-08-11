@@ -53,6 +53,11 @@ static void rx_thread(void *arg1, void *unused1, void *unused2)
 		if (res == 0) {
 			/* semaphore taken and receive packets */
 			while ((pkt = eth_stm32_rx(dev)) != NULL) {
+				if (ntohs(NET_ETH_HDR(pkt)->type) == NET_ETH_PTYPE_PNIO) {
+					/* NET_PRIORITY_NC = 7 is Network control (highest priority) */
+					net_pkt_set_priority(pkt, NET_PRIORITY_NC);
+				}
+
 				iface = net_pkt_iface(pkt);
 				res = net_recv_data(iface, pkt);
 				if (res < 0) {
